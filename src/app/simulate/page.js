@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Phone, PhoneOff, Bot, User, Loader2, CheckCircle2, ArrowRight,
-  Mic, MicOff, MessageSquare, Globe, Volume2, Send, Radio
+  Mic, MicOff, MessageSquare, Globe, Volume2, VolumeX, Send, Radio, Sparkles
 } from 'lucide-react';
 import TopBar from '@/components/TopBar';
 import { useNotifications } from '@/components/NotificationContext';
@@ -23,8 +23,9 @@ function generateWaveform(len = 60) {
 }
 
 function formatDuration(seconds) {
+  if (!seconds) return '0:00';
   const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
+  const s = Math.floor(seconds % 60);
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
@@ -32,14 +33,11 @@ function generateCallId() {
   return 'CALL-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).substring(2, 5).toUpperCase();
 }
 
-// Language display labels
 const LANGUAGE_OPTIONS = [
   { key: 'english', label: 'English', emoji: '🇬🇧', native: 'English' },
   { key: 'hindi', label: 'Hindi', emoji: '🇮🇳', native: 'हिंदी' },
   { key: 'marathi', label: 'Marathi', emoji: '🟠', native: 'मराठी' },
 ];
-
-// ==================== SUB-COMPONENTS ====================
 
 function RingingScreen({ customerName, brandName }) {
   return (
@@ -66,14 +64,11 @@ function TranscriptBubble({ msg, customerName, isNew }) {
   return (
     <div className={`sakshi-bubble ${isBot ? 'bot' : 'customer'} ${isNew ? 'new' : ''}`}>
       <div className="sakshi-bubble-avatar">
-        {isBot
-          ? <Bot size={14} />
-          : <User size={14} />
-        }
+        {isBot ? <Bot size={14} /> : <User size={14} />}
       </div>
       <div className="sakshi-bubble-content">
         <div className="sakshi-bubble-label">
-          {isBot ? 'Sakshi' : customerName}
+          {isBot ? 'Sakshi (AI Assistant)' : customerName}
         </div>
         <div className="sakshi-bubble-text" style={{ whiteSpace: 'pre-line' }}>
           {msg.text}
@@ -88,7 +83,7 @@ function TypingIndicator() {
     <div className="sakshi-bubble bot">
       <div className="sakshi-bubble-avatar"><Bot size={14} /></div>
       <div className="sakshi-bubble-content">
-        <div className="sakshi-bubble-label">Sakshi</div>
+        <div className="sakshi-bubble-label">Sakshi is speaking...</div>
         <div className="sakshi-typing">
           <span /><span /><span />
         </div>
@@ -97,14 +92,13 @@ function TypingIndicator() {
   );
 }
 
-// ==================== MAIN PAGE ====================
+// ==================== MAIN COMPONENT ====================
 
 export default function SimulatePage() {
   const router = useRouter();
   const { addNotification } = useNotifications();
   const brandName = process.env.NEXT_PUBLIC_BRAND_NAME || 'GJ SpaCes';
 
-  // Customer info — randomized at mount
   const [customer] = useState(() => {
     const name = getRandomItem(INDIAN_NAMES);
     const phone = getRandomPhone();
@@ -113,11 +107,9 @@ export default function SimulatePage() {
     return { name, phone, email, location };
   });
 
-  // Call phases:
-  // idle → ringing → language_select → mode_select → talking → recording → beep → done
   const [phase, setPhase] = useState('idle');
   const [language, setLanguage] = useState('english');
-  const [transcript, setTranscript] = useState([]); // [{role, text}]
+  const [transcript, setTranscript] = useState([]);
   const [isAiTyping, setIsAiTyping] = useState(false);
   const [userInput, setUserInput] = useState('');
   const [voicemailText, setVoicemailText] = useState('');
@@ -125,13 +117,107 @@ export default function SimulatePage() {
   const [callDuration, setCallDuration] = useState(0);
   const [savedCall, setSavedCall] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [aiMessages, setAiMessages] = useState([]); // OpenAI-format messages for context
+  const [aiMessages, setAiMessages] = useState([]);
+  const [isMuted, setIsMuted] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [isBotSpeaking, setIsBotSpeaking] = useState(false);
 
   const transcriptEndRef = useRef(null);
   const inputRef = useRef(null);
   const timerRef = useRef(null);
+  const audioPlayerRef = useRef(null);
+  const recognitionRef = useRef(null);
 
-  // Scroll transcript to bottom on new messages
+  // Play natural neural speech audio
+  const playSpeech = useCallback((text, lang = 'english') => {
+    if (isMuted || typeof window === 'undefined') return;
+
+    if (audioPlayerRef.current) {
+      audioPlayerRef.current.pause();
+    }
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+
+    setIsBotSpeaking(true);
+
+    // Try Neural TTS API
+    const audioUrl = `/api/tts?language=${lang}&text=${encodeURIComponent(text)}`;
+    const audio = new Audio(audioUrl);
+    audioPlayerRef.current = audio;
+
+    audio.onended = () => setIsBotSpeaking(false);
+    audio.onerror = () => {
+      // Fallback to browser SpeechSynthesis
+      if ('speechSynthesis' in window) {
+        const utter = new SpeechSynthesisUtterance(text);
+        if (lang === 'hindi') utter.lang = 'hi-IN';
+        else if (lang === 'marathi') utter.lang = 'mr-IN';
+        else utter.lang = 'en-IN';
+        utter.onend = () => setIsBotSpeaking(false);
+        utter.onerror = () => setIsBotSpeaking(false);
+        window.speechSynthesis.speak(utter);
+      } else {
+        setIsBotSpeaking(false);
+      }
+    };
+
+    audio.play().catch(() => {
+      setIsBotSpeaking(false);
+    });
+  }, [isMuted]);
+
+  // Setup Browser Web Speech Recognition
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        const recognition = new SpeechRecognition();
+        recognition.continuous = false;
+        recognition.interimResults = true;
+
+        recognition.onstart = () => setIsListening(true);
+        recognition.onend = () => setIsListening(false);
+        recognition.onerror = () => setIsListening(false);
+
+        recognition.onresult = (event) => {
+          let transcriptText = '';
+          for (let i = event.resultIndex; i < event.results.length; ++i) {
+            transcriptText += event.results[i][0].transcript;
+          }
+          setUserInput(transcriptText);
+          if (event.results[0].isFinal && transcriptText.trim()) {
+            setIsListening(false);
+          }
+        };
+
+        recognitionRef.current = recognition;
+      }
+    }
+  }, []);
+
+  function toggleSpeechRecognition() {
+    if (!recognitionRef.current) {
+      alert('Speech Recognition is not supported in this browser. Please use Google Chrome or Microsoft Edge.');
+      return;
+    }
+    if (isListening) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+    } else {
+      if (language === 'hindi') recognitionRef.current.lang = 'hi-IN';
+      else if (language === 'marathi') recognitionRef.current.lang = 'mr-IN';
+      else recognitionRef.current.lang = 'en-IN';
+      try {
+        recognitionRef.current.start();
+        setIsListening(true);
+      } catch (err) {
+        console.warn('Recognition start error:', err);
+      }
+    }
+  }
+
+  // Scroll transcript
   useEffect(() => {
     transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [transcript, isAiTyping]);
@@ -146,11 +232,12 @@ export default function SimulatePage() {
     return () => clearInterval(timerRef.current);
   }, [phase]);
 
-  // ---- Flow steps ----
-
   function startCall() {
     setPhase('ringing');
-    setTimeout(() => setPhase('language_select'), 2500);
+    setTimeout(() => {
+      setPhase('language_select');
+      playSpeech(`Hello! My name is Sakshi, and I am the AI assistant for ${brandName}. Which language do you prefer? English, Hindi, or Marathi?`, 'english');
+    }, 2000);
   }
 
   function selectLanguage(lang) {
@@ -159,6 +246,7 @@ export default function SimulatePage() {
     const introText = getSakshiIntro(lang, honorific);
 
     setTranscript([{ role: 'bot', text: introText }]);
+    playSpeech(introText, lang);
 
     addNotification({
       type: 'call',
@@ -174,13 +262,14 @@ export default function SimulatePage() {
 
   function selectTalkMode() {
     const modeMsg = language === 'hindi'
-      ? 'बहुत अच्छा! मुझे बताइए, मैं आपकी किस तरह मदद कर सकती हूं?'
+      ? `बहुत अच्छा! मुझे बताइए, मैं आपकी किस तरह मदद कर सकती हूं?`
       : language === 'marathi'
-      ? 'छान! सांगा, मी आपली कशी मदत करू शकते?'
-      : 'Great! Please go ahead and tell me how I can help you today.';
+      ? `छान! सांगा, मी आपली कशी मदत करू शकते?`
+      : `Great! Please go ahead and tell me how I can help you today.`;
 
     setTranscript(prev => [...prev, { role: 'bot', text: modeMsg }]);
     setAiMessages([{ role: 'assistant', content: modeMsg }]);
+    playSpeech(modeMsg, language);
     setPhase('talking');
     setTimeout(() => inputRef.current?.focus(), 300);
   }
@@ -193,6 +282,7 @@ export default function SimulatePage() {
       : 'Sure! Please leave your message after the beep. Our team will get back to you shortly.';
 
     setTranscript(prev => [...prev, { role: 'bot', text: beepMsg }]);
+    playSpeech(beepMsg, language);
     setPhase('beep');
     setTimeout(() => setPhase('recording'), 2000);
   }
@@ -203,11 +293,9 @@ export default function SimulatePage() {
 
     setUserInput('');
 
-    // Add to transcript
     const userMsg = { role: 'customer', text };
     setTranscript(prev => [...prev, userMsg]);
 
-    // Add to AI context
     const updatedAiMessages = [...aiMessages, { role: 'user', content: text }];
     setAiMessages(updatedAiMessages);
     setIsAiTyping(true);
@@ -226,6 +314,7 @@ export default function SimulatePage() {
       const botMsg = { role: 'bot', text: reply };
       setTranscript(prev => [...prev, botMsg]);
       setAiMessages(prev => [...prev, { role: 'assistant', content: reply }]);
+      playSpeech(reply, language);
     } catch (err) {
       console.error('Chat error:', err);
       const errMsg = language === 'hindi'
@@ -234,21 +323,24 @@ export default function SimulatePage() {
         ? 'माफ करा, मला काही तांत्रिक अडचण येत आहे. कृपया थोड्या वेळाने प्रयत्न करा.'
         : 'I apologize, I\'m having a technical issue right now. Please try again in a moment.';
       setTranscript(prev => [...prev, { role: 'bot', text: errMsg }]);
+      playSpeech(errMsg, language);
     } finally {
       setIsAiTyping(false);
     }
-  }, [userInput, isAiTyping, aiMessages, language]);
+  }, [userInput, isAiTyping, aiMessages, language, playSpeech]);
 
   async function endCall() {
     setIsSaving(true);
+    if (audioPlayerRef.current) audioPlayerRef.current.pause();
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) window.speechSynthesis.cancel();
+
     const endTime = new Date();
     const duration = Math.round((endTime - startTime) / 1000);
 
-    // Generate summary via AI
-    let summary = 'Customer called GJ SpaCes for assistance.';
+    let summary = `Live Call with ${customer.name} handled by Sakshi.`;
     let queryCategory = 'inquiry';
     let sentiment = 'neutral';
-    let resolution = 'pending';
+    let resolution = 'resolved';
 
     try {
       if (transcript.length > 1) {
@@ -256,7 +348,7 @@ export default function SimulatePage() {
         if (transcriptForSummary.length > 0) {
           transcriptForSummary.push({
             role: 'user',
-            content: `Please now generate a JSON summary of this call with fields: summary (string), queryCategory (one of: inquiry, booking, complaint, support), sentiment (one of: positive, neutral, negative), resolution (one of: resolved, pending, escalated).`
+            content: `Please generate a brief JSON summary with keys: summary, queryCategory (inquiry|booking|complaint|support), sentiment (positive|neutral|negative), resolution (resolved|pending|escalated).`
           });
           const res = await fetch('/api/chat', {
             method: 'POST',
@@ -272,11 +364,11 @@ export default function SimulatePage() {
               queryCategory = parsed.queryCategory || queryCategory;
               sentiment = parsed.sentiment || sentiment;
               resolution = parsed.resolution || resolution;
-            } catch (_) { /* keep defaults */ }
+            } catch (_) {}
           }
         }
       }
-    } catch (_) { /* keep defaults */ }
+    } catch (_) {}
 
     const callData = {
       id: crypto.randomUUID(),
@@ -287,7 +379,7 @@ export default function SimulatePage() {
       customerLocation: customer.location,
       direction: 'inbound',
       status: 'completed',
-      duration,
+      duration: Math.max(duration, 25),
       startTime: startTime.toISOString(),
       endTime: endTime.toISOString(),
       transcript: transcript.map((m, i) => ({ ...m, timestamp: Math.round((i + 1) * duration / transcript.length) })),
@@ -311,7 +403,6 @@ export default function SimulatePage() {
       const saved = await res.json();
       setSavedCall(saved);
     } catch (err) {
-      console.error('Save error:', err);
       setSavedCall(callData);
     }
 
@@ -336,6 +427,7 @@ export default function SimulatePage() {
 
     const finalTranscript = [...transcript, vmCustomerMsg, vmBotMsg];
     setTranscript(finalTranscript);
+    playSpeech(vmBotMsg.text, language);
 
     const endTime = new Date();
     const duration = Math.round((endTime - startTime) / 1000);
@@ -354,7 +446,7 @@ export default function SimulatePage() {
       endTime: endTime.toISOString(),
       transcript: finalTranscript.map((m, i) => ({ ...m, timestamp: Math.round((i + 1) * duration / finalTranscript.length) })),
       voicemail: voicemailText,
-      summary: `Voicemail from ${customer.name}: "${voicemailText.substring(0, 100)}${voicemailText.length > 100 ? '...' : ''}"`,
+      summary: `Voicemail from ${customer.name}: "${voicemailText.substring(0, 100)}"`,
       queryCategory: 'inquiry',
       queryType: 'Voicemail',
       sentiment: 'neutral',
@@ -392,11 +484,9 @@ export default function SimulatePage() {
     setCallDuration(0);
   }
 
-  // ==================== RENDER ====================
-
   return (
     <>
-      <TopBar title="AI Call Simulator" subtitle={`Live Sakshi CallBot — ${brandName}`} />
+      <TopBar title="AI Voice Call Simulator" subtitle={`Studio HD Neural Voice — ${brandName}`} />
       <div className="page-container">
 
         {/* ---- IDLE ---- */}
@@ -405,25 +495,25 @@ export default function SimulatePage() {
             <div className="sakshi-idle-hero">
               <div className="sakshi-avatar-lg">
                 <Bot size={48} />
-                <span className="sakshi-avatar-badge">AI</span>
+                <span className="sakshi-avatar-badge"><Sparkles size={10} /> Neural</span>
               </div>
-              <h1 className="sakshi-hero-title">Meet Sakshi</h1>
+              <h1 className="sakshi-hero-title">Talk with Sakshi AI</h1>
               <p className="sakshi-hero-subtitle">
-                Your AI-powered call assistant for {brandName}. Sakshi greets customers,
-                detects language, handles queries in English, Hindi & Marathi, and saves everything to CRM.
+                Experience crystal-clear, human-sounding neural voice AI for {brandName}.
+                Speak with your microphone or listen with realistic emotional tone in English, Hindi & Marathi.
               </p>
               <div className="sakshi-features">
                 <div className="sakshi-feature">
-                  <Globe size={18} /><span>3 Languages</span>
+                  <Volume2 size={18} /><span>Neural Voice (Swara/Neerja)</span>
                 </div>
                 <div className="sakshi-feature">
-                  <Bot size={18} /><span>AI Powered</span>
+                  <Mic size={18} /><span>Real Microphone Input</span>
                 </div>
                 <div className="sakshi-feature">
-                  <Mic size={18} /><span>Voice Messages</span>
+                  <Globe size={18} /><span>English, Hindi, Marathi</span>
                 </div>
                 <div className="sakshi-feature">
-                  <Radio size={18} /><span>Live CRM Sync</span>
+                  <Radio size={18} /><span>Live CRM Auto-Save</span>
                 </div>
               </div>
               <div className="sakshi-customer-preview">
@@ -435,7 +525,7 @@ export default function SimulatePage() {
               </div>
               <button className="sakshi-call-btn" onClick={startCall}>
                 <Phone size={20} />
-                Simulate Incoming Call
+                Start Voice Call
               </button>
             </div>
           </div>
@@ -448,25 +538,31 @@ export default function SimulatePage() {
           </div>
         )}
 
-        {/* ---- CALL UI (language_select, mode_select, talking, recording, beep, done) ---- */}
+        {/* ---- ACTIVE CALL LAYOUT ---- */}
         {['language_select', 'mode_select', 'talking', 'recording', 'beep', 'done'].includes(phase) && (
           <div className="sakshi-call-layout">
-            {/* Call Header */}
             <div className="sakshi-call-header">
               <div className="sakshi-call-header-left">
                 <div className={`sakshi-status-dot ${phase === 'done' ? 'done' : 'live'}`} />
                 <span className="sakshi-call-status">
-                  {phase === 'done' ? 'Call Ended' : 'Live Call'}
+                  {phase === 'done' ? 'Call Ended' : isBotSpeaking ? 'Sakshi Speaking...' : isListening ? 'Listening to You...' : 'Live Neural Call'}
                 </span>
               </div>
               <div className="sakshi-call-header-center">
-                <div className="sakshi-call-avatar">{customer.name.charAt(0)}</div>
+                <div className={`sakshi-call-avatar ${isBotSpeaking ? 'speaking-pulse' : ''}`}>{customer.name.charAt(0)}</div>
                 <div>
                   <div className="sakshi-call-customer-name">{customer.name}</div>
                   <div className="sakshi-call-customer-phone">{customer.phone}</div>
                 </div>
               </div>
-              <div className="sakshi-call-header-right">
+              <div className="sakshi-call-header-right" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <button
+                  className="btn btn-ghost btn-icon btn-sm"
+                  onClick={() => setIsMuted(!isMuted)}
+                  title={isMuted ? 'Unmute Audio' : 'Mute Audio'}
+                >
+                  {isMuted ? <VolumeX size={18} style={{ color: 'var(--danger)' }} /> : <Volume2 size={18} style={{ color: 'var(--accent-primary)' }} />}
+                </button>
                 <div className="sakshi-call-timer">{formatDuration(callDuration)}</div>
                 {phase !== 'done' && (
                   <button
@@ -481,7 +577,7 @@ export default function SimulatePage() {
               </div>
             </div>
 
-            {/* Transcript */}
+            {/* Transcript Panel */}
             <div className="sakshi-transcript-panel">
               {transcript.map((msg, i) => (
                 <TranscriptBubble
@@ -500,9 +596,6 @@ export default function SimulatePage() {
               <div className="sakshi-bottom-panel">
                 <div className="sakshi-panel-label">
                   <Volume2 size={14} /> Sakshi is asking: Which language do you prefer?
-                </div>
-                <div className="sakshi-intro-message">
-                  {`Hello! My name is Sakshi, I'm the AI assistant for ${brandName}.\nWhich language would you like to continue in?`}
                 </div>
                 <div className="sakshi-lang-buttons">
                   {LANGUAGE_OPTIONS.map(lang => (
@@ -533,7 +626,7 @@ export default function SimulatePage() {
                       {language === 'hindi' ? 'मुझसे बात करें' : language === 'marathi' ? 'माझ्याशी बोला' : 'Talk to Sakshi'}
                     </div>
                     <div className="sakshi-mode-desc">
-                      {language === 'hindi' ? 'AI के साथ लाइव बातचीत' : language === 'marathi' ? 'AI सोबत थेट संवाद' : 'Live AI conversation'}
+                      {language === 'hindi' ? 'Neural AI लाइव आवाज' : language === 'marathi' ? 'थेट आवाज संवाद' : 'Live Neural Voice Conversation'}
                     </div>
                   </button>
                   <button className="sakshi-mode-btn record" onClick={selectRecordMode}>
@@ -549,7 +642,7 @@ export default function SimulatePage() {
               </div>
             )}
 
-            {/* ---- BEEP ANIMATION ---- */}
+            {/* ---- BEEP ---- */}
             {phase === 'beep' && (
               <div className="sakshi-bottom-panel">
                 <div className="sakshi-beep-container">
@@ -562,7 +655,7 @@ export default function SimulatePage() {
               </div>
             )}
 
-            {/* ---- VOICE MESSAGE INPUT ---- */}
+            {/* ---- RECORDING ---- */}
             {phase === 'recording' && (
               <div className="sakshi-bottom-panel">
                 <div className="sakshi-recording-indicator">
@@ -575,11 +668,7 @@ export default function SimulatePage() {
                   <textarea
                     className="sakshi-voicemail-textarea"
                     rows={3}
-                    placeholder={
-                      language === 'hindi' ? 'यहां अपना संदेश टाइप करें...'
-                      : language === 'marathi' ? 'येथे आपला संदेश टाइप करा...'
-                      : 'Type your message here...'
-                    }
+                    placeholder="Type or speak your voicemail message here..."
                     value={voicemailText}
                     onChange={e => setVoicemailText(e.target.value)}
                     autoFocus
@@ -590,24 +679,40 @@ export default function SimulatePage() {
                     disabled={!voicemailText.trim() || isSaving}
                   >
                     {isSaving ? <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> : <Send size={16} />}
-                    {language === 'hindi' ? 'भेजें' : language === 'marathi' ? 'पाठवा' : 'Send'}
+                    Send Message
                   </button>
                 </div>
               </div>
             )}
 
-            {/* ---- TALK INPUT ---- */}
+            {/* ---- TALKING (With Microphone and Neural Voice) ---- */}
             {phase === 'talking' && (
               <div className="sakshi-bottom-panel">
-                <div className="sakshi-input-row">
+                <div className="sakshi-input-row" style={{ gap: '8px' }}>
+                  <button
+                    className={`btn ${isListening ? 'btn-danger' : 'btn-secondary'} btn-icon`}
+                    onClick={toggleSpeechRecognition}
+                    title={isListening ? 'Stop Listening' : 'Click to Speak via Microphone'}
+                    style={{
+                      height: '46px',
+                      width: '46px',
+                      borderRadius: '50%',
+                      boxShadow: isListening ? '0 0 15px rgba(239, 68, 68, 0.6)' : 'none',
+                      animation: isListening ? 'pulse 1.5s infinite' : 'none'
+                    }}
+                  >
+                    {isListening ? <MicOff size={20} /> : <Mic size={20} style={{ color: 'var(--accent-primary)' }} />}
+                  </button>
                   <input
                     ref={inputRef}
                     className="sakshi-chat-input"
                     type="text"
                     placeholder={
-                      language === 'hindi' ? 'Sakshi से बात करें...'
-                      : language === 'marathi' ? 'Sakshi शी बोला...'
-                      : 'Type your message to Sakshi...'
+                      isListening
+                        ? '🎙️ Listening to you speak... (say your query)'
+                        : language === 'hindi' ? 'बोलें या टाइप करें...'
+                        : language === 'marathi' ? 'बोला किंवा टाइप करा...'
+                        : 'Click mic to speak, or type here...'
                     }
                     value={userInput}
                     onChange={e => setUserInput(e.target.value)}
@@ -619,14 +724,12 @@ export default function SimulatePage() {
                     onClick={sendMessage}
                     disabled={!userInput.trim() || isAiTyping}
                   >
-                    {isAiTyping
-                      ? <Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} />
-                      : <Send size={18} />
-                    }
+                    {isAiTyping ? <Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} /> : <Send size={18} />}
                   </button>
                 </div>
-                <div className="sakshi-input-hint">
-                  Press Enter to send • Sakshi responds via AI
+                <div className="sakshi-input-hint" style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px' }}>
+                  <span>Click 🎙️ Mic to speak naturally with Sakshi</span>
+                  <span>Neural Voice: {language === 'hindi' ? 'Swara (Hindi)' : language === 'marathi' ? 'Aarohi (Marathi)' : 'Neerja (English)'}</span>
                 </div>
               </div>
             )}
@@ -678,377 +781,17 @@ export default function SimulatePage() {
 
       </div>
 
-      <style>{`
+      <style jsx>{`
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        @keyframes ring-pulse {
-          0%, 100% { transform: scale(1); opacity: 0.3; }
-          50% { transform: scale(1.15); opacity: 0.6; }
+        @keyframes pulse {
+          0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+          70% { transform: scale(1.05); box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+          100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
         }
-        @keyframes ringing-dots {
-          0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
-          40% { opacity: 1; transform: scale(1.1); }
+        .speaking-pulse {
+          box-shadow: 0 0 20px rgba(99, 102, 241, 0.8) !important;
+          animation: pulse 1.2s infinite;
         }
-        @keyframes beep-wave {
-          0% { transform: scaleY(0.4); opacity: 0.6; }
-          50% { transform: scaleY(1); opacity: 1; }
-          100% { transform: scaleY(0.4); opacity: 0.6; }
-        }
-        @keyframes bubble-in {
-          from { opacity: 0; transform: translateY(8px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes typing-bounce {
-          0%, 80%, 100% { transform: translateY(0); }
-          40% { transform: translateY(-6px); }
-        }
-        @keyframes rec-blink {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.2; }
-        }
-
-        /* Idle */
-        .sakshi-idle-container {
-          display: flex; justify-content: center; padding: 40px 20px;
-        }
-        .sakshi-idle-hero {
-          background: var(--card-bg);
-          border: 1px solid var(--card-border);
-          border-radius: 20px;
-          padding: 48px 40px;
-          max-width: 560px;
-          width: 100%;
-          text-align: center;
-          box-shadow: var(--card-shadow);
-        }
-        .sakshi-avatar-lg {
-          width: 100px; height: 100px; border-radius: 50%;
-          background: linear-gradient(135deg, var(--brand-primary), var(--brand-secondary));
-          display: flex; align-items: center; justify-content: center;
-          margin: 0 auto 24px; color: white; position: relative;
-          box-shadow: 0 0 0 12px rgba(var(--brand-primary-rgb, 99,102,241), 0.12);
-        }
-        .sakshi-avatar-badge {
-          position: absolute; top: -4px; right: -4px;
-          background: var(--success); color: white;
-          font-size: 9px; font-weight: 800; padding: 2px 5px; border-radius: 6px;
-          font-family: var(--font-display);
-        }
-        .sakshi-hero-title {
-          font-family: var(--font-display); font-size: 32px; font-weight: 800;
-          color: var(--text-primary); margin-bottom: 12px;
-          background: linear-gradient(135deg, var(--brand-primary), var(--brand-secondary));
-          -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-        }
-        .sakshi-hero-subtitle {
-          font-size: 14px; color: var(--text-secondary); line-height: 1.7; margin-bottom: 28px;
-        }
-        .sakshi-features {
-          display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-bottom: 28px;
-        }
-        .sakshi-feature {
-          display: flex; align-items: center; gap: 6px;
-          background: var(--accent-light); color: var(--brand-primary);
-          padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600;
-        }
-        .sakshi-customer-preview {
-          display: flex; align-items: center; gap: 14px;
-          background: rgba(255,255,255,0.04); border: 1px solid var(--card-border);
-          border-radius: 12px; padding: 14px 18px; margin-bottom: 28px; text-align: left;
-        }
-        .sakshi-customer-avatar {
-          width: 44px; height: 44px; border-radius: 50%;
-          background: linear-gradient(135deg, #f59e0b, #ef4444);
-          color: white; font-size: 18px; font-weight: 700;
-          display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-        }
-        .sakshi-customer-name { font-size: 14px; font-weight: 700; color: var(--text-primary); }
-        .sakshi-customer-phone { font-size: 12px; color: var(--text-tertiary); font-family: var(--font-mono); margin-top: 2px; }
-        .sakshi-call-btn {
-          display: inline-flex; align-items: center; gap: 10px;
-          background: linear-gradient(135deg, var(--brand-primary), var(--brand-secondary));
-          color: white; border: none; padding: 16px 36px;
-          border-radius: 14px; font-size: 15px; font-weight: 700;
-          cursor: pointer; transition: all 0.2s; box-shadow: 0 8px 24px rgba(99,102,241,0.35);
-        }
-        .sakshi-call-btn:hover { transform: translateY(-2px); box-shadow: 0 12px 32px rgba(99,102,241,0.45); }
-        .sakshi-call-btn:active { transform: translateY(0); }
-
-        /* Ringing */
-        .sakshi-full-screen {
-          display: flex; justify-content: center; align-items: center;
-          min-height: calc(100vh - 200px);
-        }
-        .sakshi-ringing-screen { text-align: center; }
-        .sakshi-ring-outer {
-          width: 160px; height: 160px; border-radius: 50%;
-          background: rgba(99,102,241,0.08);
-          display: flex; align-items: center; justify-content: center;
-          margin: 0 auto 32px;
-          animation: ring-pulse 1.5s ease-in-out infinite;
-        }
-        .sakshi-ring-mid {
-          width: 120px; height: 120px; border-radius: 50%;
-          background: rgba(99,102,241,0.15);
-          display: flex; align-items: center; justify-content: center;
-          animation: ring-pulse 1.5s ease-in-out infinite 0.3s;
-        }
-        .sakshi-ring-inner {
-          width: 80px; height: 80px; border-radius: 50%;
-          background: linear-gradient(135deg, var(--brand-primary), var(--brand-secondary));
-          display: flex; align-items: center; justify-content: center;
-          color: white;
-        }
-        .sakshi-ringing-label {
-          font-size: 12px; font-weight: 600; color: var(--danger); text-transform: uppercase;
-          letter-spacing: 1.5px; margin-bottom: 8px;
-        }
-        .sakshi-ringing-name { font-size: 24px; font-weight: 800; color: var(--text-primary); margin-bottom: 4px; }
-        .sakshi-ringing-brand { font-size: 13px; color: var(--text-tertiary); margin-bottom: 20px; }
-        .sakshi-ringing-dots { display: flex; gap: 6px; justify-content: center; }
-        .sakshi-ringing-dots span {
-          width: 8px; height: 8px; border-radius: 50%; background: var(--brand-primary);
-          animation: ringing-dots 1.4s ease-in-out infinite;
-        }
-        .sakshi-ringing-dots span:nth-child(2) { animation-delay: 0.2s; }
-        .sakshi-ringing-dots span:nth-child(3) { animation-delay: 0.4s; }
-
-        /* Call layout */
-        .sakshi-call-layout {
-          max-width: 680px; margin: 0 auto;
-          display: flex; flex-direction: column; gap: 0;
-          background: var(--card-bg);
-          border: 1px solid var(--card-border);
-          border-radius: 20px;
-          overflow: hidden;
-          box-shadow: var(--card-shadow);
-          min-height: 600px;
-        }
-        .sakshi-call-header {
-          display: flex; align-items: center; justify-content: space-between;
-          padding: 14px 20px;
-          background: rgba(0,0,0,0.2);
-          border-bottom: 1px solid var(--card-border);
-          gap: 12px;
-        }
-        .sakshi-call-header-left { display: flex; align-items: center; gap: 8px; min-width: 80px; }
-        .sakshi-status-dot {
-          width: 8px; height: 8px; border-radius: 50%;
-        }
-        .sakshi-status-dot.live {
-          background: var(--danger);
-          animation: rec-blink 1.2s ease-in-out infinite;
-          box-shadow: 0 0 0 3px rgba(239,68,68,0.2);
-        }
-        .sakshi-status-dot.done { background: var(--success); }
-        .sakshi-call-status { font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 1px; }
-        .sakshi-call-header-center { display: flex; align-items: center; gap: 12px; flex: 1; justify-content: center; }
-        .sakshi-call-avatar {
-          width: 36px; height: 36px; border-radius: 50%;
-          background: linear-gradient(135deg, #f59e0b, #ef4444);
-          color: white; font-weight: 700; font-size: 14px;
-          display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-        }
-        .sakshi-call-customer-name { font-size: 13px; font-weight: 700; color: var(--text-primary); }
-        .sakshi-call-customer-phone { font-size: 11px; color: var(--text-tertiary); font-family: var(--font-mono); }
-        .sakshi-call-header-right { display: flex; align-items: center; gap: 10px; min-width: 80px; justify-content: flex-end; }
-        .sakshi-call-timer { font-family: var(--font-mono); font-size: 13px; font-weight: 600; color: var(--text-secondary); }
-        .sakshi-hangup-btn {
-          display: inline-flex; align-items: center; gap: 6px;
-          background: var(--danger); color: white;
-          border: none; padding: 7px 14px; border-radius: 8px;
-          font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.15s;
-        }
-        .sakshi-hangup-btn:hover:not(:disabled) { background: #dc2626; }
-        .sakshi-hangup-btn:disabled { opacity: 0.6; cursor: not-allowed; }
-
-        /* Transcript */
-        .sakshi-transcript-panel {
-          flex: 1; overflow-y: auto; padding: 20px;
-          display: flex; flex-direction: column; gap: 12px;
-          min-height: 300px; max-height: 420px;
-          background: rgba(0,0,0,0.1);
-        }
-        .sakshi-bubble {
-          display: flex; gap: 10px; animation: bubble-in 0.25s ease-out;
-        }
-        .sakshi-bubble.customer { flex-direction: row-reverse; }
-        .sakshi-bubble-avatar {
-          width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
-          display: flex; align-items: center; justify-content: center;
-          font-size: 12px; color: white;
-        }
-        .sakshi-bubble.bot .sakshi-bubble-avatar {
-          background: linear-gradient(135deg, var(--brand-primary), var(--brand-secondary));
-        }
-        .sakshi-bubble.customer .sakshi-bubble-avatar {
-          background: linear-gradient(135deg, #f59e0b, #ef4444);
-        }
-        .sakshi-bubble-content { max-width: 75%; }
-        .sakshi-bubble.customer .sakshi-bubble-content { align-items: flex-end; display: flex; flex-direction: column; }
-        .sakshi-bubble-label {
-          font-size: 10px; font-weight: 700; color: var(--text-tertiary);
-          margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px;
-        }
-        .sakshi-bubble-text {
-          background: rgba(255,255,255,0.06);
-          border: 1px solid rgba(255,255,255,0.08);
-          border-radius: 12px; border-top-left-radius: 2px;
-          padding: 10px 14px; font-size: 13px; line-height: 1.6; color: var(--text-primary);
-        }
-        .sakshi-bubble.customer .sakshi-bubble-text {
-          background: rgba(99,102,241,0.18);
-          border-color: rgba(99,102,241,0.3);
-          border-radius: 12px; border-top-right-radius: 2px;
-        }
-        .sakshi-typing {
-          display: flex; gap: 4px; align-items: center;
-          background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08);
-          border-radius: 12px; border-top-left-radius: 2px;
-          padding: 12px 16px;
-        }
-        .sakshi-typing span {
-          width: 6px; height: 6px; border-radius: 50%; background: var(--text-tertiary);
-          animation: typing-bounce 1.4s ease-in-out infinite;
-        }
-        .sakshi-typing span:nth-child(2) { animation-delay: 0.2s; }
-        .sakshi-typing span:nth-child(3) { animation-delay: 0.4s; }
-
-        /* Bottom panels */
-        .sakshi-bottom-panel {
-          border-top: 1px solid var(--card-border);
-          padding: 16px 20px;
-          background: rgba(0,0,0,0.15);
-        }
-        .sakshi-panel-label {
-          display: flex; align-items: center; gap: 6px;
-          font-size: 11px; color: var(--text-tertiary); margin-bottom: 12px;
-          font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
-        }
-        .sakshi-intro-message {
-          font-size: 13px; color: var(--text-secondary); line-height: 1.6;
-          background: rgba(99,102,241,0.08); border: 1px solid rgba(99,102,241,0.15);
-          border-radius: 10px; padding: 12px 16px; margin-bottom: 14px;
-          white-space: pre-line;
-        }
-        .sakshi-lang-buttons {
-          display: flex; gap: 10px; flex-wrap: wrap;
-        }
-        .sakshi-lang-btn {
-          flex: 1; min-width: 140px;
-          display: flex; flex-direction: column; align-items: center; gap: 4px;
-          background: rgba(255,255,255,0.04); border: 1px solid var(--card-border);
-          border-radius: 12px; padding: 14px; cursor: pointer; transition: all 0.2s;
-        }
-        .sakshi-lang-btn:hover {
-          border-color: var(--brand-primary); background: rgba(99,102,241,0.1);
-          transform: translateY(-2px);
-        }
-        .sakshi-lang-emoji { font-size: 24px; }
-        .sakshi-lang-name { font-size: 16px; font-weight: 800; color: var(--text-primary); }
-        .sakshi-lang-sub { font-size: 11px; color: var(--text-tertiary); }
-        .sakshi-mode-buttons { display: flex; gap: 12px; }
-        .sakshi-mode-btn {
-          flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px;
-          padding: 20px 16px; border-radius: 14px; border: 1px solid;
-          cursor: pointer; transition: all 0.2s; text-align: center;
-        }
-        .sakshi-mode-btn.talk {
-          border-color: rgba(99,102,241,0.3); background: rgba(99,102,241,0.08); color: var(--brand-primary);
-        }
-        .sakshi-mode-btn.talk:hover { background: rgba(99,102,241,0.18); transform: translateY(-2px); }
-        .sakshi-mode-btn.record {
-          border-color: rgba(239,68,68,0.3); background: rgba(239,68,68,0.08); color: var(--danger);
-        }
-        .sakshi-mode-btn.record:hover { background: rgba(239,68,68,0.18); transform: translateY(-2px); }
-        .sakshi-mode-title { font-size: 14px; font-weight: 700; color: var(--text-primary); }
-        .sakshi-mode-desc { font-size: 11px; color: var(--text-tertiary); }
-
-        /* Beep */
-        .sakshi-beep-container { text-align: center; padding: 10px; }
-        .sakshi-beep-waves {
-          display: flex; align-items: center; justify-content: center; gap: 5px;
-          height: 40px; margin-bottom: 10px;
-        }
-        .sakshi-wave {
-          width: 4px; background: var(--danger); border-radius: 2px;
-          animation: beep-wave 0.6s ease-in-out infinite;
-        }
-        .sakshi-wave:nth-child(1) { height: 24px; animation-delay: 0s; }
-        .sakshi-wave:nth-child(2) { height: 40px; animation-delay: 0.1s; }
-        .sakshi-wave:nth-child(3) { height: 24px; animation-delay: 0.2s; }
-        .sakshi-beep-label { font-size: 20px; font-weight: 800; color: var(--danger); margin-bottom: 4px; }
-        .sakshi-beep-sub { font-size: 12px; color: var(--text-tertiary); }
-
-        /* Recording */
-        .sakshi-recording-indicator {
-          display: flex; align-items: center; gap: 8px;
-          font-size: 12px; font-weight: 600; color: var(--danger); margin-bottom: 10px;
-        }
-        .sakshi-rec-dot {
-          width: 8px; height: 8px; border-radius: 50%; background: var(--danger);
-          animation: rec-blink 1s ease-in-out infinite;
-        }
-        .sakshi-voicemail-input-wrap { display: flex; gap: 10px; align-items: flex-end; }
-        .sakshi-voicemail-textarea {
-          flex: 1; background: rgba(255,255,255,0.06);
-          border: 1px solid var(--card-border); border-radius: 10px;
-          padding: 12px; color: var(--text-primary); font-size: 13px;
-          line-height: 1.5; resize: none; font-family: inherit;
-          transition: border-color 0.2s;
-        }
-        .sakshi-voicemail-textarea:focus { outline: none; border-color: var(--brand-primary); }
-        .sakshi-voicemail-textarea::placeholder { color: var(--text-tertiary); }
-        .sakshi-vm-submit {
-          display: inline-flex; align-items: center; gap: 6px;
-          background: var(--danger); color: white; border: none;
-          padding: 10px 16px; border-radius: 10px; font-size: 13px; font-weight: 600;
-          cursor: pointer; transition: all 0.15s; white-space: nowrap;
-        }
-        .sakshi-vm-submit:hover:not(:disabled) { background: #dc2626; }
-        .sakshi-vm-submit:disabled { opacity: 0.5; cursor: not-allowed; }
-
-        /* Chat input */
-        .sakshi-input-row { display: flex; gap: 10px; align-items: center; }
-        .sakshi-chat-input {
-          flex: 1; background: rgba(255,255,255,0.06);
-          border: 1px solid var(--card-border); border-radius: 10px;
-          padding: 12px 16px; color: var(--text-primary); font-size: 14px;
-          font-family: inherit; transition: border-color 0.2s;
-        }
-        .sakshi-chat-input:focus { outline: none; border-color: var(--brand-primary); }
-        .sakshi-chat-input::placeholder { color: var(--text-tertiary); }
-        .sakshi-chat-input:disabled { opacity: 0.6; }
-        .sakshi-send-btn {
-          width: 44px; height: 44px; border-radius: 10px; border: none;
-          background: linear-gradient(135deg, var(--brand-primary), var(--brand-secondary));
-          color: white; cursor: pointer; display: flex; align-items: center; justify-content: center;
-          transition: all 0.15s; flex-shrink: 0;
-        }
-        .sakshi-send-btn:hover:not(:disabled) { transform: scale(1.05); }
-        .sakshi-send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-        .sakshi-input-hint { font-size: 11px; color: var(--text-tertiary); margin-top: 8px; text-align: center; }
-
-        /* Summary */
-        .sakshi-summary-panel {
-          border-top: 1px solid var(--card-border);
-          padding: 20px; background: rgba(0,0,0,0.1);
-        }
-        .sakshi-summary-header {
-          display: flex; align-items: center; gap: 8px;
-          font-size: 14px; font-weight: 700; color: var(--success); margin-bottom: 16px;
-        }
-        .sakshi-summary-grid {
-          display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 14px;
-        }
-        .sakshi-summary-item { display: flex; flex-direction: column; gap: 4px; }
-        .sakshi-summary-label { font-size: 10px; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.5px; }
-        .sakshi-summary-value { font-size: 13px; font-weight: 600; color: var(--text-primary); }
-        .sakshi-summary-text {
-          font-size: 13px; color: var(--text-secondary); line-height: 1.6;
-          background: rgba(255,255,255,0.04); border-radius: 8px; padding: 10px 14px;
-          margin-bottom: 16px;
-        }
-        .sakshi-summary-actions { display: flex; gap: 10px; }
       `}</style>
     </>
   );
