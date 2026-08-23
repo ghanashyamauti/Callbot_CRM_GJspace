@@ -1,7 +1,12 @@
 // TwiML helpers — shared utilities for all Twilio webhook routes
 // Handles voice config, language mapping, and TwiML XML generation.
 
-const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+function getBaseUrl() {
+  if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL;
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
+  if (process.env.VERCEL_URL) return `https://${process.env.VERCEL_URL}`;
+  return 'https://callbot-crm-g-jspace.vercel.app';
+}
 
 // ==================== VOICE CONFIG ====================
 
@@ -18,7 +23,8 @@ export function getVoiceConfig(language = 'english') {
 }
 
 export function webhookUrl(path, params = {}) {
-  const url = new URL(path, BASE_URL);
+  const base = getBaseUrl();
+  const url = new URL(path, base);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
   return url.toString();
 }
