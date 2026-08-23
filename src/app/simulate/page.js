@@ -99,13 +99,20 @@ export default function SimulatePage() {
   const { addNotification } = useNotifications();
   const brandName = process.env.NEXT_PUBLIC_BRAND_NAME || 'GJ SpaCes';
 
-  const [customer] = useState(() => {
+  const [customer, setCustomer] = useState({
+    name: 'Ghanashyam Auti',
+    phone: '+91 93229 79345',
+    email: 'ghanashyam@gjspaces.com',
+    location: 'Koregaon Park, Pune',
+  });
+
+  useEffect(() => {
     const name = getRandomItem(INDIAN_NAMES);
     const phone = getRandomPhone();
     const email = name.toLowerCase().replace(/\s+/g, '.') + '@' + getRandomItem(['gmail.com', 'yahoo.com', 'outlook.com']);
     const location = getRandomItem(PUNE_AREAS) + ', Pune';
-    return { name, phone, email, location };
-  });
+    setCustomer({ name, phone, email, location });
+  }, []);
 
   const [phase, setPhase] = useState('idle');
   const [language, setLanguage] = useState('english');
