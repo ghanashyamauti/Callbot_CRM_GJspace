@@ -17,8 +17,16 @@ export async function middleware(request) {
   }
 
   // 2. Check session token from cookie
-  const token = request.cookies.get(COOKIE_NAME)?.value;
-  const session = token ? await verifyToken(token) : null;
+  let session = null;
+  try {
+    const token = request.cookies.get(COOKIE_NAME)?.value;
+    if (token) {
+      session = await verifyToken(token);
+    }
+  } catch (err) {
+    console.error('Middleware token verification error:', err);
+    session = null;
+  }
 
   // 3. If no valid session, redirect to login
   if (!session) {
@@ -27,14 +35,17 @@ export async function middleware(request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const loginUrl = new URL('/login', request.url);
+    const loginUrl = request.nextUrl.clone();
+    loginUrl.pathname = '/login';
     loginUrl.searchParams.set('redirect', pathname);
     return NextResponse.redirect(loginUrl);
   }
 
-  // 4. If logged in and visiting /login, redirect to /
+  // 4. If already logged in and visiting /login, redirect to /
   if (pathname === '/login') {
-    return NextResponse.redirect(new URL('/', request.url));
+    const homeUrl = request.nextUrl.clone();
+    homeUrl.pathname = '/';
+    return NextResponse.redirect(homeUrl);
   }
 
   return NextResponse.next();
@@ -42,12 +53,6 @@ export async function middleware(request) {
 
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     */
     '/((?!_next/static|_next/image|favicon.ico).*)',
   ],
 };
