@@ -6,10 +6,10 @@ import mongoose from 'mongoose';
 
 const CallSessionSchema = new mongoose.Schema({
   callSid:    { type: String, required: true, unique: true, index: true },
-  from:       { type: String, default: '' },   // caller phone number
-  to:         { type: String, default: '' },   // your Twilio number
+  from:       { type: String, default: '' },
+  to:         { type: String, default: '' },
   language:   { type: String, enum: ['english', 'hindi', 'marathi'], default: 'english' },
-  speechLang: { type: String, default: 'en-IN' },   // Twilio language code
+  speechLang: { type: String, default: 'en-IN' },
   honorific:  { type: String, enum: ['sir', 'maam', ''], default: '' },
   mode:       { type: String, enum: ['talk', 'voicemail', ''], default: '' },
   transcript: [{
@@ -18,20 +18,16 @@ const CallSessionSchema = new mongoose.Schema({
     _id: false,
   }],
   aiMessages: [{
-    role:    { type: String },   // 'user' | 'assistant'
+    role:    { type: String },
     content: { type: String },
     _id: false,
   }],
-  recordingUrl:      { type: String, default: null },
+  recordingUrl:        { type: String, default: null },
   recordingTranscript: { type: String, default: null },
   startTime:  { type: Date, default: Date.now },
   status:     { type: String, enum: ['active', 'ended'], default: 'active' },
-  updatedAt:  { type: Date, default: Date.now },
-});
-
-CallSessionSchema.pre('save', function(next) {
-  this.updatedAt = new Date();
-  next();
+}, {
+  timestamps: true, // Automatically manages createdAt and updatedAt safely in Mongoose 8/9
 });
 
 export const CallSession = mongoose.models.CallSession
