@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="50%" stop-color="#1e1b4b" />
+      <stop offset="100%" stop-color="#312e81" />
+    </linearGradient>
+    <linearGradient id="glowGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6366f1" />
+      <stop offset="50%" stop-color="#8b5cf6" />
+      <stop offset="100%" stop-color="#06b6d4" />
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="100%" stop-color="#818cf8" />
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="16" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Background Rounded Shield / Icon Tile -->
+  <rect width="512" height="512" rx="128" fill="url(#bgGrad)" />
+  <rect width="504" height="504" x="4" y="4" rx="124" fill="none" stroke="url(#glowGrad)" stroke-width="6" opacity="0.6" />
+
+  <!-- AI Soundwave Circles / Radiating Waves -->
+  <circle cx="256" cy="230" r="160" fill="none" stroke="#6366f1" stroke-width="4" opacity="0.2" />
+  <circle cx="256" cy="230" r="130" fill="none" stroke="#38bdf8" stroke-width="4" opacity="0.3" />
+
+  <!-- Headset Arch -->
+  <path d="M140 230 C140 140, 372 140, 372 230" fill="none" stroke="url(#glowGrad)" stroke-width="26" stroke-linecap="round" filter="url(#glow)" />
+
+  <!-- Headset Ear Cushions -->
+  <rect x="116" y="210" width="36" height="70" rx="18" fill="url(#accentGrad)" />
+  <rect x="360" y="210" width="36" height="70" rx="18" fill="url(#accentGrad)" />
+
+  <!-- Microphone Boom & Mic Tip -->
+  <path d="M370 270 C370 340, 300 365, 270 365" fill="none" stroke="#8b5cf6" stroke-width="16" stroke-linecap="round" />
+  <circle cx="256" cy="365" r="16" fill="#38bdf8" filter="url(#glow)" />
+
+  <!-- Center Monogram "GJ" -->
+  <text x="256" y="270" font-family="system-ui, -apple-system, sans-serif" font-size="96" font-weight="900" fill="#ffffff" text-anchor="middle" letter-spacing="-2">GJ</text>
+
+  <!-- Bottom Glowing Indicator Dot -->
+  <circle cx="256" cy="425" r="10" fill="#10b981" filter="url(#glow)" />
+</svg>
