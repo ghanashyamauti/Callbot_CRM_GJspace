@@ -182,50 +182,27 @@ export default function SimulatePage() {
     }
   }
 
-  function speakBrowserFemaleVoice(text, lang, onDone) {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+  // Play speech using Microsoft Neural TTS API — 100% female Indian voice, never falls back to browser
+  const playSpeech = useCallback((text, lang = 'english', onDone = null) => {
+    if (isMuted || typeof window === 'undefined') {
       if (onDone) onDone();
       return;
     }
-    const utter = new SpeechSynthesisUtterance(text);
-    const voices = window.speechSynthesis.getVoices();
-    const femaleVoice = voices.find(v =>
-      (v.name.includes('Female') || v.name.includes('Heera') || v.name.includes('Kalpana') || v.name.includes('Zira') || v.name.includes('Swara') || v.name.includes('Neerja') || v.name.includes('Aarohi') || v.name.includes('Google हिन्दी') || v.name.includes('Google मराठी'))
-    ) || voices.find(v => v.name.toLowerCase().includes('female') || v.name.toLowerCase().includes('zira') || v.name.toLowerCase().includes('woman'));
 
-    if (femaleVoice) utter.voice = femaleVoice;
-    utter.pitch = 1.15; // Set higher feminine pitch
-    if (lang === 'hindi') utter.lang = 'hi-IN';
-    else if (lang === 'marathi') utter.lang = 'mr-IN';
-    else utter.lang = 'en-IN';
-
-    utter.onend = () => { if (onDone) onDone(); };
-    utter.onerror = () => { if (onDone) onDone(); };
-    window.speechSynthesis.speak(utter);
-  }
-
-  // Play single speech audio stream with auto-mic muting to prevent double voice echo
-  const playSpeech = useCallback((text, lang = 'english') => {
-    if (isMuted || typeof window === 'undefined') return;
-
-    // Pause recognition while Sakshi speaks — keep-alive loop will auto-resume after
+    // Stop any active mic recording to prevent echo
     if (recognitionRef.current) {
-      try {
-        recognitionRef.current.abort();
-      } catch (_) {}
+      try { recognitionRef.current.abort(); } catch (_) {}
       recognitionRef.current = null;
     }
-    // Temporarily disable keep-alive loop during bot speech
     isRecognitionActiveRef.current = false;
     setIsListening(false);
 
+    // Stop any currently playing audio
     if (audioPlayerRef.current) {
       audioPlayerRef.current.pause();
-      audioPlayerRef.current.currentTime = 0;
+      audioPlayerRef.current = null;
     }
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-    }
+    if ('speechSynthesis' in window) window.speechSynthesis.cancel();
 
     setIsBotSpeaking(true);
 
@@ -233,19 +210,18 @@ export default function SimulatePage() {
     const audio = new Audio(audioUrl);
     audioPlayerRef.current = audio;
 
-    const onFinishSpeaking = () => {
+    const finish = () => {
       setIsBotSpeaking(false);
+      if (onDone) onDone();
     };
 
-    audio.onended = onFinishSpeaking;
-    audio.onerror = () => {
-      speakBrowserFemaleVoice(text, lang, onFinishSpeaking);
-    };
-
-    audio.play().catch(() => {
-      speakBrowserFemaleVoice(text, lang, onFinishSpeaking);
-    });
+    audio.onended = finish;
+    // On error: finish silently — do NOT use browser SpeechSynthesis (it picks male voice)
+    audio.onerror = finish;
+    audio.play().catch(finish);
   }, [isMuted]);
+
+
 
   // ─── MediaRecorder-based Push-to-Talk (Groq Whisper STT) ───────────────────
   // Replaces Web Speech API which fails with 'network' errors
@@ -301,9 +277,8 @@ export default function SimulatePage() {
         const blob = new Blob(chunks, { type: mimeType });
         if (blob.size < 1000) return; // too short, ignore
 
-        // Show "Transcribing..." state
         setIsListening(false);
-        setIsAiTyping(true);
+        setIsAiTyping(true); // Show "Processing..." while transcribing
 
         try {
           const formData = new FormData();
@@ -314,14 +289,20 @@ export default function SimulatePage() {
           const data = await res.json();
 
           if (data.text && data.text.trim()) {
-            setUserInput(data.text.trim());
+            const transcribed = data.text.trim();
+            setUserInput(transcribed);
+            setIsAiTyping(false);
+            // Auto-send immediately after transcription — seamless voice flow
+            await sendMessage(transcribed);
+          } else {
+            setIsAiTyping(false);
           }
         } catch (err) {
           console.error('[STT] Transcription error:', err);
-        } finally {
           setIsAiTyping(false);
         }
       };
+
 
       recorder.start();
       recognitionRef.current = recorder;
@@ -386,7 +367,6 @@ export default function SimulatePage() {
     const introText = getSakshiIntro(lang, honorific);
 
     setTranscript([{ role: 'bot', text: introText }]);
-    playSpeech(introText, lang);
 
     addNotification({
       type: 'call',
@@ -395,11 +375,13 @@ export default function SimulatePage() {
       priority: 'medium',
     });
 
-    setTimeout(() => {
-      setPhase('mode_select');
+    // Chain: play intro FIRST, then when done → move to mode_select and play mode prompt
+    playSpeech(introText, lang, () => {
       const modePrompt = getSakshiModePrompt(lang);
+      setPhase('mode_select');
+      setTranscript(prev => [...prev, { role: 'bot', text: modePrompt }]);
       playSpeech(modePrompt, lang);
-    }, 2200);
+    });
   }
 
   function selectTalkMode(mode) {
@@ -409,13 +391,14 @@ export default function SimulatePage() {
         ? `जी, मैं सुन रही हूं। आप GJ SpaCes के बारे में क्या जानना चाहते हैं?`
         : language === 'marathi'
         ? `हो, मी ऐकत आहे. आपण GJ SpaCes बद्दल काय माहिती जाणून घेऊ इच्छिता?`
-        : `Yes, I am listening! What would you like to know about GJ SpaCes?`;
+        : `Yes, I'm listening! How can I help you with GJ SpaCes today?`;
 
       setTranscript(prev => [...prev, { role: 'bot', text: greeting }]);
       setAiMessages([{ role: 'assistant', content: greeting }]);
-      playSpeech(greeting, language);
-
-      setTimeout(() => inputRef.current?.focus(), 500);
+      // Play greeting — when done, focus input so user knows to type/speak
+      playSpeech(greeting, language, () => {
+        setTimeout(() => inputRef.current?.focus(), 200);
+      });
     } else {
       setPhase('voicemail');
       const vmPrompt = language === 'hindi'
@@ -425,20 +408,23 @@ export default function SimulatePage() {
         : `Please record your message after the beep.`;
 
       setTranscript(prev => [...prev, { role: 'bot', text: vmPrompt }]);
-      playSpeech(vmPrompt, language);
-
-      setTimeout(() => setPhase('beep'), 1800);
+      playSpeech(vmPrompt, language, () => {
+        setTimeout(() => setPhase('beep'), 500);
+      });
     }
   }
 
-  async function sendMessage() {
-    const text = userInput.trim();
+  async function sendMessage(overrideText = null) {
+    const text = (overrideText || userInput).trim();
     if (!text || isAiTyping) return;
 
-    if (recognitionRef.current && isListening) {
-      recognitionRef.current.stop();
-      setIsListening(false);
+    // Stop any active mic recording
+    isRecognitionActiveRef.current = false;
+    if (recognitionRef.current) {
+      try { recognitionRef.current.stop(); } catch (_) {}
+      recognitionRef.current = null;
     }
+    setIsListening(false);
 
     const customerMsg = { role: 'customer', text };
     const updatedTranscript = [...transcript, customerMsg];
@@ -466,7 +452,12 @@ export default function SimulatePage() {
 
       setTranscript(prev => [...prev, { role: 'bot', text: botReply }]);
       setAiMessages(prev => [...prev, { role: 'assistant', content: botReply }]);
-      playSpeech(botReply, language);
+      setIsAiTyping(false);
+
+      // Speak reply — when done, refocus input so user is ready for next message
+      playSpeech(botReply, language, () => {
+        setTimeout(() => inputRef.current?.focus(), 200);
+      });
     } catch (err) {
       console.error('Chat error:', err);
       const errorMsg = language === 'hindi'
@@ -476,12 +467,13 @@ export default function SimulatePage() {
         : 'I apologize, I am having trouble responding. Please try again.';
 
       setTranscript(prev => [...prev, { role: 'bot', text: errorMsg }]);
-      playSpeech(errorMsg, language);
-    } finally {
       setIsAiTyping(false);
-      setTimeout(() => inputRef.current?.focus(), 100);
+      playSpeech(errorMsg, language, () => {
+        setTimeout(() => inputRef.current?.focus(), 200);
+      });
     }
   }
+
 
   async function endCall() {
     if (audioPlayerRef.current) audioPlayerRef.current.pause();
