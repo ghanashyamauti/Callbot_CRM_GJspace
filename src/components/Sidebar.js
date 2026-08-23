@@ -1,14 +1,16 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard,
   Phone,
   Users,
   Zap,
   Download,
+  LogOut,
 } from 'lucide-react';
+import { useState } from 'react';
 
 const navItems = [
   { label: 'Dashboard', href: '/', icon: LayoutDashboard },
@@ -20,7 +22,27 @@ const navItems = [
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+  const [loggingOut, setLoggingOut] = useState(false);
   const brandName = process.env.NEXT_PUBLIC_BRAND_NAME || 'GJ SpaCes';
+
+  // Do not show sidebar on login page
+  if (pathname === '/login') {
+    return null;
+  }
+
+  const handleLogout = async () => {
+    setLoggingOut(true);
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+      router.push('/login');
+      router.refresh();
+    } catch (e) {
+      console.error('Logout error:', e);
+    } finally {
+      setLoggingOut(false);
+    }
+  };
 
   return (
     <aside className="sidebar">
@@ -57,12 +79,41 @@ export default function Sidebar() {
       </nav>
 
       <div className="sidebar-footer">
-        <div className="sidebar-user">
-          <div className="sidebar-avatar">GJ</div>
-          <div className="sidebar-user-info">
-            <div className="sidebar-user-name">{brandName}</div>
-            <div className="sidebar-user-role">Admin</div>
+        <div className="sidebar-user" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div className="sidebar-avatar">GJ</div>
+            <div className="sidebar-user-info">
+              <div className="sidebar-user-name">{brandName}</div>
+              <div className="sidebar-user-role">Admin</div>
+            </div>
           </div>
+          <button
+            onClick={handleLogout}
+            disabled={loggingOut}
+            title="Sign out"
+            style={{
+              background: 'rgba(239, 68, 68, 0.1)',
+              border: '1px solid rgba(239, 68, 68, 0.2)',
+              color: '#ef4444',
+              borderRadius: '8px',
+              padding: '6px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'all 0.15s ease',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = '#ef4444';
+              e.currentTarget.style.color = '#ffffff';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)';
+              e.currentTarget.style.color = '#ef4444';
+            }}
+          >
+            <LogOut size={16} />
+          </button>
         </div>
       </div>
     </aside>
