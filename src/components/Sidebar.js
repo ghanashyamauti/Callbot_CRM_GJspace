@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   Phone,
   Users,
+  Radio,
   Zap,
   Download,
   LogOut,
