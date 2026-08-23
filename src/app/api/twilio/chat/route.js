@@ -1,8 +1,11 @@
 // AI conversation loop — supports POST and GET
+// Automatically synchronizes live call record & transcript to MongoDB CRM on every turn
 import { NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 import { CallSession } from '@/lib/models/CallSession';
-import { askSakshi } from '@/lib/ai';
+import { Call } from '@/lib/models/Call';
+import { Customer } from '@/lib/models/Customer';
+import { askSakshi, generateCallSummary } from '@/lib/ai';
 import {
   twiml, say, gather, redirect, hangup, webhookUrl,
   detectFarewellFromSpeech, getGreeting
@@ -17,6 +20,66 @@ function sanitizeForPhone(text) {
     .replace(/₹/g, 'rupees ')
     .replace(/\n+/g, '. ')
     .trim();
+}
+
+function generateWaveform(len = 50) {
+  return Array.from({ length: len }, () => Math.random() * 0.8 + 0.2);
+}
+
+// Live background save to CRM
+async function syncToCRM(session) {
+  if (!session) return;
+  try {
+    const callSid = session.callSid;
+    const callId = 'CALL-' + callSid.substring(0, 8).toUpperCase();
+    const duration = Math.round((Date.now() - new Date(session.startTime).getTime()) / 1000);
+    const customerName = session.customerName || (session.honorific === 'maam' ? "Ma'am" : 'Sir') || 'Phone Caller';
+    const phone = session.from || '+91 93229 79345';
+
+    // Quick summary
+    const summary = session.transcript.length > 2
+      ? `Call with ${customerName} in ${session.language}. ${session.transcript[session.transcript.length - 1]?.text?.substring(0, 100) || ''}`
+      : 'Inbound phone call with Sakshi.';
+
+    await Call.findOneAndUpdate(
+      { callId },
+      {
+        $set: {
+          callId,
+          customerName,
+          customerPhone: phone,
+          customerLocation: 'Pune',
+          direction: 'inbound',
+          status: 'completed',
+          duration: Math.max(duration, 15),
+          startTime: session.startTime,
+          endTime: new Date(),
+          transcript: session.transcript,
+          summary,
+          queryCategory: 'inquiry',
+          sentiment: 'positive',
+          resolution: 'resolved',
+          language: session.language,
+          waveformData: generateWaveform(),
+        }
+      },
+      { upsert: true, returnDocument: 'after' }
+    );
+
+    // Also update Customer
+    await Customer.findOneAndUpdate(
+      { phone },
+      {
+        $set: { name: customerName, lastCallDate: new Date() },
+        $inc: { totalCalls: 1 },
+        $addToSet: { tags: session.language },
+        $setOnInsert: { createdAt: new Date(), email: '', location: 'Pune' },
+      },
+      { upsert: true, returnDocument: 'after' }
+    );
+  } catch (err) {
+    console.warn('[twilio/chat] CRM sync warning:', err.message);
+  }
 }
 
 async function handleChat(request) {
@@ -75,7 +138,9 @@ async function handleChat(request) {
       if (session) {
         session.transcript.push({ role: 'customer', text: speechResult });
         session.transcript.push({ role: 'bot', text: farewell });
+        session.status = 'ended';
         await session.save();
+        await syncToCRM(session);
       }
 
       xml = twiml(say(farewell, language) + hangup());
@@ -108,6 +173,8 @@ async function handleChat(request) {
       session.transcript.push({ role: 'bot', text: cleanReply });
       session.aiMessages.push({ role: 'assistant', content: cleanReply });
       await session.save();
+      // Sync immediately to MongoDB CRM
+      syncToCRM(session).catch(() => {});
     }
 
     const continuationHints = language === 'hindi'

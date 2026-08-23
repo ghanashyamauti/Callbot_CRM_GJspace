@@ -6,8 +6,8 @@ import { SAKSHI_SYSTEM_PROMPT } from './sakshi-persona';
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 
-// Primary model: Gemini Flash (fast, capable, good for multilingual)
-const PRIMARY_MODEL = 'google/gemini-flash-1.5';
+// Primary model: Gemini 2.0 Flash (ultra-fast ~0.4s response, fully capable multilingual)
+const PRIMARY_MODEL = 'google/gemini-2.0-flash-001';
 // Fallback model if primary fails
 const FALLBACK_MODEL = 'openai/gpt-4o-mini';
 

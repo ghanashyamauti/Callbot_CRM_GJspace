@@ -5,13 +5,14 @@
 import mongoose from 'mongoose';
 
 const CallSessionSchema = new mongoose.Schema({
-  callSid:    { type: String, required: true, unique: true, index: true },
-  from:       { type: String, default: '' },
-  to:         { type: String, default: '' },
-  language:   { type: String, enum: ['english', 'hindi', 'marathi'], default: 'english' },
-  speechLang: { type: String, default: 'en-IN' },
-  honorific:  { type: String, enum: ['sir', 'maam', ''], default: '' },
-  mode:       { type: String, enum: ['talk', 'voicemail', ''], default: '' },
+  callSid:      { type: String, required: true, unique: true, index: true },
+  from:         { type: String, default: '' },
+  to:           { type: String, default: '' },
+  customerName: { type: String, default: '' },
+  language:     { type: String, enum: ['english', 'hindi', 'marathi'], default: 'english' },
+  speechLang:   { type: String, default: 'en-IN' },
+  honorific:    { type: String, enum: ['sir', 'maam', ''], default: '' },
+  mode:         { type: String, enum: ['talk', 'voicemail', ''], default: '' },
   transcript: [{
     role: { type: String, enum: ['bot', 'customer'] },
     text: { type: String },
@@ -27,7 +28,7 @@ const CallSessionSchema = new mongoose.Schema({
   startTime:  { type: Date, default: Date.now },
   status:     { type: String, enum: ['active', 'ended'], default: 'active' },
 }, {
-  timestamps: true, // Automatically manages createdAt and updatedAt safely in Mongoose 8/9
+  timestamps: true,
 });
 
 export const CallSession = mongoose.models.CallSession

@@ -10,8 +10,6 @@ function getBaseUrl() {
 
 // ==================== VOICE CONFIG ====================
 
-// Polly.Aditi supports en-IN and hi-IN
-// For mr-IN (Marathi), we use standard Twilio TTS which supports Marathi natively
 const VOICE_CONFIG = {
   english: { voice: 'Polly.Aditi', ttsLang: 'en-IN', gatherLang: 'en-IN' },
   hindi:   { voice: 'Polly.Aditi', ttsLang: 'hi-IN', gatherLang: 'hi-IN' },
@@ -29,7 +27,7 @@ export function webhookUrl(path, params = {}) {
   return url.toString();
 }
 
-// ==================== LANGUAGE DETECTION ====================
+// ==================== SPEECH PARSERS ====================
 
 export function detectLanguageFromSpeech(speechResult = '') {
   const lower = (speechResult || '').toLowerCase().trim();
@@ -48,7 +46,6 @@ export function detectLanguageFromSpeech(speechResult = '') {
     return { language: 'marathi', speechLang: 'mr-IN' };
   }
 
-  // Default to English
   return { language: 'english', speechLang: 'en-IN' };
 }
 
@@ -61,8 +58,31 @@ export function detectHonorificFromSpeech(speechResult = '') {
   ) {
     return 'maam';
   }
-  // Default to sir
   return 'sir';
+}
+
+export function extractNameFromSpeech(speechResult = '') {
+  if (!speechResult) return '';
+  let cleaned = speechResult.trim();
+
+  // Strip common conversational carrier phrases
+  const prefixes = [
+    /^(my name is|i am|this is|myself|it's|its)\s+/i,
+    /^(mera naam|main|mai|hum|mera)\s+/i,
+    /^(maaza naav|maza naav|mee|me|mi)\s+/i,
+    /\s+(bol raha hoon|bol rahi hoon|baat kar raha hoon|speaking|here)$/i,
+    /\s+(boltoy|bolte|ahe|aahe|hai)$/i,
+  ];
+
+  prefixes.forEach((regex) => {
+    cleaned = cleaned.replace(regex, '').trim();
+  });
+
+  // Capitalize properly
+  if (cleaned.length > 0) {
+    return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+  }
+  return 'Caller';
 }
 
 export function detectModeFromSpeech(speechResult = '') {
@@ -74,7 +94,6 @@ export function detectModeFromSpeech(speechResult = '') {
   ) {
     return 'voicemail';
   }
-  // Default to talk
   return 'talk';
 }
 
@@ -91,12 +110,10 @@ export function detectFarewellFromSpeech(speechResult = '') {
 
 // ==================== TWIML BUILDERS ====================
 
-// Build a complete TwiML response with XML header
 export function twiml(innerXml) {
   return `<?xml version="1.0" encoding="UTF-8"?><Response>${innerXml}</Response>`;
 }
 
-// <Say> tag with proper voice config
 export function say(text, language = 'english') {
   const { voice, ttsLang } = getVoiceConfig(language);
   const escaped = text
@@ -111,7 +128,6 @@ export function say(text, language = 'english') {
   return `<Say language="${ttsLang}">${escaped}</Say>`;
 }
 
-// <Gather> tag for speech input with Say inside
 export function gather(opts = {}) {
   const {
     action,
@@ -129,17 +145,14 @@ export function gather(opts = {}) {
   return `<Gather input="speech" language="${gatherLang}" action="${action}" method="POST" speechTimeout="${speechTimeout}" maxSpeechTime="${maxSpeechTime}"${hintsAttr}>${inner}</Gather>`;
 }
 
-// <Redirect> tag
 export function redirect(url, method = 'POST') {
   return `<Redirect method="${method}">${url}</Redirect>`;
 }
 
-// <Hangup> tag
 export function hangup() {
   return '<Hangup/>';
 }
 
-// <Record> tag for voicemail
 export function record(opts = {}) {
   const {
     action,
@@ -167,15 +180,25 @@ const GREETINGS = {
     hindi:   'मैं आपको Sir कहूं या Ma\'am?',
     marathi: 'मी आपल्याला Sir म्हणू की Ma\'am?',
   },
+  nameAsk: {
+    english: (h) => `Hello ${h}! May I please know your name?`,
+    hindi:   (h) => `नमस्ते ${h}! क्या मैं आपका शुभ नाम जान सकती हूं?`,
+    marathi: (h) => `नमस्कार ${h}! मी आपले शुभ नाव जाणून घेऊ शकते का?`,
+  },
+  nameGreet: {
+    english: (name) => `Wonderful to connect with you, ${name}! Would you like to talk to me for information, or leave a message for our team?`,
+    hindi:   (name) => `आपसे मिलकर बहुत खुशी हुई, ${name} जी! क्या आप मुझसे जानकारी लेना चाहेंगे, या टीम के लिए संदेश छोड़ना चाहेंगे?`,
+    marathi: (name) => `आपल्याशी बोलून खूप आनंद झाला, ${name} जी! आपल्याला माझ्याशी बोलायचे आहे, की टीमसाठी संदेश सोडायचा आहे?`,
+  },
   modeAsk: {
     english: 'Would you like to talk to me for information, or leave a message for our team?',
     hindi:   'क्या आप मुझसे जानकारी लेना चाहेंगे, या हमारी टीम के लिए संदेश छोड़ना चाहेंगे?',
     marathi: 'आपल्याला माझ्याशी बोलायचे आहे, की आमच्या टीमसाठी संदेश सोडायचा आहे?',
   },
   talkReady: {
-    english: (h) => `Great ${h}! Please go ahead and tell me how I can help you today.`,
-    hindi:   (h) => `बहुत अच्छा ${h}! बताइए, मैं आपकी किस तरह मदद कर सकती हूं?`,
-    marathi: (h) => `छान ${h}! सांगा, मी आपली कशी मदत करू शकते?`,
+    english: (name) => `Great ${name}! Please go ahead and tell me how I can help you today.`,
+    hindi:   (name) => `बहुत अच्छा ${name} जी! बताइए, मैं आपकी किस तरह मदद कर सकती हूं?`,
+    marathi: (name) => `छान ${name} जी! सांगा, मी आपली कशी मदत करू शकते?`,
   },
   voicemailReady: {
     english: 'Please leave your message after the beep. Press the hash key when done.',
