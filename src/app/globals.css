@@ -1562,3 +1562,716 @@ img { max-width: 100%; display: block; }
   grid-template-columns: 1fr 1fr;
   gap: 16px;
 }
+
+/* ========================================
+   SAKSHI CALLBOT SIMULATOR & RESPONSIVE STYLES
+   ======================================== */
+
+.sakshi-idle-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: calc(100vh - 140px);
+  padding: 16px;
+}
+
+.sakshi-idle-hero {
+  max-width: 680px;
+  width: 100%;
+  text-align: center;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  padding: 36px 24px;
+  box-shadow: var(--shadow-lg);
+}
+
+.sakshi-avatar-lg {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 16px;
+  position: relative;
+  box-shadow: 0 8px 24px rgba(99, 102, 241, 0.35);
+}
+
+.sakshi-avatar-badge {
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  background: #10b981;
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 2px solid #ffffff;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.sakshi-hero-title {
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin-bottom: 10px;
+  font-family: var(--font-display);
+}
+
+.sakshi-hero-subtitle {
+  font-size: 14px;
+  color: var(--text-secondary);
+  max-width: 520px;
+  margin: 0 auto 24px;
+  line-height: 1.6;
+}
+
+.sakshi-features {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 24px;
+}
+
+.sakshi-feature {
+  background: var(--bg-muted);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  padding: 12px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.sakshi-customer-preview {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--bg-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 12px 16px;
+  max-width: 400px;
+  margin: 0 auto 24px;
+  text-align: left;
+}
+
+.sakshi-customer-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #3b82f6, #6366f1);
+  color: white;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.sakshi-customer-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.sakshi-customer-phone {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.sakshi-call-btn {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: white;
+  font-size: 16px;
+  font-weight: 700;
+  padding: 14px 32px;
+  border-radius: var(--radius-full);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 8px 24px rgba(16, 185, 129, 0.35);
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.sakshi-call-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px rgba(16, 185, 129, 0.45);
+}
+
+.sakshi-full-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(100vh - 140px);
+}
+
+.sakshi-ringing-screen {
+  text-align: center;
+  padding: 40px 20px;
+}
+
+.sakshi-ring-outer {
+  width: 140px;
+  height: 140px;
+  border-radius: 50%;
+  background: rgba(99, 102, 241, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 24px;
+  animation: ring-pulse 1.8s infinite;
+}
+
+.sakshi-ring-mid {
+  width: 108px;
+  height: 108px;
+  border-radius: 50%;
+  background: rgba(99, 102, 241, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sakshi-ring-inner {
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sakshi-ringing-label {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--accent);
+  margin-bottom: 6px;
+}
+
+.sakshi-ringing-name {
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.sakshi-ringing-brand {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+}
+
+.sakshi-ringing-dots {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+}
+
+.sakshi-ringing-dots span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  display: inline-block;
+  animation: ringing-dots 1.4s infinite;
+}
+
+.sakshi-ringing-dots span:nth-child(2) { animation-delay: 0.2s; }
+.sakshi-ringing-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+.sakshi-call-layout {
+  max-width: 860px;
+  width: 100%;
+  margin: 0 auto;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 560px;
+}
+
+.sakshi-call-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-card);
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.sakshi-call-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sakshi-status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 10px rgba(34, 197, 94, 0.7);
+}
+
+.sakshi-status-dot.done {
+  background: var(--text-muted);
+  box-shadow: none;
+}
+
+.sakshi-call-status {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.sakshi-call-header-center {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sakshi-call-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: white;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+}
+
+.sakshi-call-customer-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.sakshi-call-customer-phone {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+}
+
+.sakshi-call-header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sakshi-call-timer {
+  font-size: 15px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  background: var(--bg-muted);
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+}
+
+.sakshi-hangup-btn {
+  background: var(--danger);
+  color: white;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 7px 16px;
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.sakshi-hangup-btn:hover {
+  opacity: 0.9;
+}
+
+.sakshi-transcript-panel {
+  flex: 1;
+  padding: 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: 420px;
+  min-height: 260px;
+  background: #fafbfe;
+}
+
+.sakshi-bubble {
+  display: flex;
+  gap: 10px;
+  max-width: 84%;
+  animation: bubble-in 0.25s ease-out;
+}
+
+.sakshi-bubble.bot {
+  align-self: flex-start;
+}
+
+.sakshi-bubble.customer {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+}
+
+.sakshi-bubble-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 12px;
+}
+
+.sakshi-bubble.bot .sakshi-bubble-avatar {
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: white;
+}
+
+.sakshi-bubble.customer .sakshi-bubble-avatar {
+  background: linear-gradient(135deg, #3b82f6, #06b6d4);
+  color: white;
+}
+
+.sakshi-bubble-content {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.sakshi-bubble-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+}
+
+.sakshi-bubble.customer .sakshi-bubble-label {
+  text-align: right;
+}
+
+.sakshi-bubble-text {
+  padding: 10px 14px;
+  border-radius: 14px;
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.sakshi-bubble.bot .sakshi-bubble-text {
+  background: #ffffff;
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-top-left-radius: 2px;
+  box-shadow: var(--shadow-xs);
+}
+
+.sakshi-bubble.customer .sakshi-bubble-text {
+  background: linear-gradient(135deg, #2f7cff, #1a6bef);
+  color: white;
+  border-top-right-radius: 2px;
+  box-shadow: 0 2px 8px rgba(47, 124, 255, 0.25);
+}
+
+.sakshi-typing {
+  display: flex;
+  gap: 4px;
+  padding: 10px 14px;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  border-top-left-radius: 2px;
+  width: fit-content;
+}
+
+.sakshi-typing span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  display: inline-block;
+  animation: typing-bounce 1.4s infinite ease-in-out;
+}
+
+.sakshi-bottom-panel {
+  padding: 16px 20px;
+  background: #ffffff;
+  border-top: 1px solid var(--border);
+}
+
+.sakshi-panel-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.sakshi-lang-buttons {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.sakshi-lang-btn {
+  background: var(--bg-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 14px 10px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.sakshi-lang-btn:hover {
+  border-color: var(--accent);
+  background: var(--accent-light);
+  transform: translateY(-2px);
+}
+
+.sakshi-lang-emoji {
+  font-size: 22px;
+}
+
+.sakshi-lang-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.sakshi-lang-sub {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.sakshi-mode-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.sakshi-mode-btn {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 18px 16px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.sakshi-mode-btn.talk {
+  background: linear-gradient(180deg, #fafbfe 0%, #eef2ff 100%);
+  color: #4f46e5;
+  border-color: #c7d2fe;
+}
+
+.sakshi-mode-btn.record {
+  background: linear-gradient(180deg, #fafbfe 0%, #ecfdf5 100%);
+  color: #059669;
+  border-color: #a7f3d0;
+}
+
+.sakshi-mode-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.sakshi-mode-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.sakshi-mode-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.sakshi-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.sakshi-chat-input {
+  flex: 1;
+  height: 46px;
+  background: var(--bg-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  padding: 0 18px;
+  font-size: 14px;
+  color: var(--text-primary);
+  transition: border 0.2s;
+}
+
+.sakshi-chat-input:focus {
+  border-color: var(--accent);
+  background: #ffffff;
+}
+
+.sakshi-send-btn {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--brand-primary), var(--accent-hover));
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform 0.2s;
+}
+
+.sakshi-send-btn:hover:not(:disabled) {
+  transform: scale(1.05);
+}
+
+.sakshi-send-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sakshi-summary-panel {
+  padding: 24px;
+}
+
+.sakshi-summary-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 16px;
+}
+
+.sakshi-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.sakshi-summary-item {
+  background: var(--bg-muted);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  padding: 12px 10px;
+  text-align: center;
+}
+
+.sakshi-summary-label {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.sakshi-summary-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.sakshi-summary-text {
+  background: var(--bg-muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  margin-bottom: 20px;
+}
+
+.sakshi-summary-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+/* ========================================
+   MOBILE MEDIA QUERIES (< 768px)
+   ======================================== */
+@media (max-width: 768px) {
+  .sakshi-features {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+
+  .sakshi-mode-buttons {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .sakshi-lang-buttons {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .sakshi-summary-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+
+  .sakshi-summary-actions {
+    flex-direction: column;
+  }
+
+  .sakshi-summary-actions button {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .sakshi-bubble {
+    max-width: 92%;
+  }
+
+  .sakshi-call-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .sakshi-call-header-right {
+    width: 100%;
+    justify-content: space-between;
+  }
+}

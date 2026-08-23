@@ -1,17 +1,31 @@
-// GET / POST /api/tts — Free Studio-Grade Neural Text-to-Speech API
-// Uses Microsoft Neural Voices for 100% human-like Indian English, Hindi, and Marathi.
+// GET / POST /api/tts — Free High-Definition Female Neural Text-to-Speech API
+// Uses Microsoft's premier Indian Female Neural Voices (Neerja, Swara, Aarohi)
 
 import { NextResponse } from 'next/server';
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
 
-const VOICE_MAP = {
-  english: 'en-IN-NeerjaNeural',
-  hindi:   'hi-IN-SwaraNeural',
-  marathi: 'mr-IN-AarohiNeural',
+// Premier Indian Female Neural Voice Models
+const FEMALE_VOICES = {
+  english: 'en-IN-NeerjaNeural', // Crystal clear Indian English Female Receptionist
+  hindi:   'hi-IN-SwaraNeural',  // Melodic, natural Hindi Female Voice
+  marathi: 'mr-IN-AarohiNeural', // Authentic native Marathi Female Voice
 };
 
-async function generateSpeechAudio(text, language = 'english') {
-  const voice = VOICE_MAP[language] || VOICE_MAP.english;
+function cleanTextForSpeech(text) {
+  return text
+    .replace(/\*\*/g, '')
+    .replace(/\*/g, '')
+    .replace(/#{1,6}\s/g, '')
+    .replace(/[✓✔•→🎉😊🙏💰📋⚠️🏢📊🎙️📞]/g, '')
+    .replace(/₹/g, 'rupees ')
+    .replace(/\n+/g, '. ')
+    .trim();
+}
+
+async function generateSpeechAudio(rawText, language = 'english') {
+  const voice = FEMALE_VOICES[language] || FEMALE_VOICES.english;
+  const text = cleanTextForSpeech(rawText) || 'Hello from GJ SpaCes!';
+
   const tts = new MsEdgeTTS();
   await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
 
