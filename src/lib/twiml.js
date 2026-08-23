@@ -1,5 +1,5 @@
 // TwiML helpers — shared utilities for all Twilio webhook routes
-// Handles voice config, language mapping, and TwiML XML generation.
+// Handles high-clarity voice config, enhanced speech recognition, and TwiML generation.
 
 function getBaseUrl() {
   if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL;
@@ -9,11 +9,12 @@ function getBaseUrl() {
 }
 
 // ==================== VOICE CONFIG ====================
+// Uses natural neural Indian voices for crystal-clear HD phone audio
 
 const VOICE_CONFIG = {
-  english: { voice: 'Polly.Aditi', ttsLang: 'en-IN', gatherLang: 'en-IN' },
-  hindi:   { voice: 'Polly.Aditi', ttsLang: 'hi-IN', gatherLang: 'hi-IN' },
-  marathi: { voice: null,          ttsLang: 'mr-IN', gatherLang: 'mr-IN' },
+  english: { voice: 'Polly.Kajal-Neural', ttsLang: 'en-IN', gatherLang: 'en-IN' },
+  hindi:   { voice: 'Polly.Kajal-Neural', ttsLang: 'hi-IN', gatherLang: 'hi-IN' },
+  marathi: { voice: null,                 ttsLang: 'mr-IN', gatherLang: 'mr-IN' },
 };
 
 export function getVoiceConfig(language = 'english') {
@@ -65,7 +66,6 @@ export function extractNameFromSpeech(speechResult = '') {
   if (!speechResult) return '';
   let cleaned = speechResult.trim();
 
-  // Strip common conversational carrier phrases
   const prefixes = [
     /^(my name is|i am|this is|myself|it's|its)\s+/i,
     /^(mera naam|main|mai|hum|mera)\s+/i,
@@ -78,7 +78,6 @@ export function extractNameFromSpeech(speechResult = '') {
     cleaned = cleaned.replace(regex, '').trim();
   });
 
-  // Capitalize properly
   if (cleaned.length > 0) {
     return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
   }
@@ -128,21 +127,22 @@ export function say(text, language = 'english') {
   return `<Say language="${ttsLang}">${escaped}</Say>`;
 }
 
+// Enhanced Gather with phone-optimized acoustic model & neural ASR
 export function gather(opts = {}) {
   const {
     action,
     language = 'english',
     prompt = '',
-    speechTimeout = 'auto',
+    speechTimeout = '2',
     hints = '',
-    maxSpeechTime = 25,
+    maxSpeechTime = 30,
   } = opts;
 
   const { gatherLang } = getVoiceConfig(language);
   const hintsAttr = hints ? ` hints="${hints}"` : '';
   const inner = prompt ? say(prompt, language) : '';
 
-  return `<Gather input="speech" language="${gatherLang}" action="${action}" method="POST" speechTimeout="${speechTimeout}" maxSpeechTime="${maxSpeechTime}"${hintsAttr}>${inner}</Gather>`;
+  return `<Gather input="speech" language="${gatherLang}" action="${action}" method="POST" speechModel="phone_call" enhanced="true" speechTimeout="${speechTimeout}" maxSpeechTime="${maxSpeechTime}" profanityFilter="false"${hintsAttr}>${inner}</Gather>`;
 }
 
 export function redirect(url, method = 'POST') {
@@ -171,7 +171,7 @@ export function record(opts = {}) {
 
 const GREETINGS = {
   intro: {
-    english: 'Hello! My name is Sakshi and I am the AI assistant for GJ SpaCes. Please say your preferred language. Say English, Hindi, or Marathi.',
+    english: 'Hello! My name is Sakshi and I am the AI assistant for GJ SpaCes. Please say your preferred language — English, Hindi, or Marathi.',
     hindi:   'नमस्ते! मेरा नाम सक्षी है, मैं GJ SpaCes की AI सहायक हूं। कृपया अपनी भाषा बताएं — हिंदी, अंग्रेजी, या मराठी।',
     marathi: 'नमस्कार! माझे नाव सक्षी आहे, मी GJ SpaCes ची AI सहाय्यक आहे. कृपया आपली भाषा सांगा — मराठी, हिंदी, किंवा इंग्रजी.',
   },

@@ -1,8 +1,36 @@
-// Entry point for Twilio calls (supports both GET and POST)
+// Entry point for Twilio calls (supports GET and POST)
+// Automatically initiates full-call dual audio recording and creates live MongoDB session.
 import { NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 import { CallSession } from '@/lib/models/CallSession';
 import { twiml, gather, redirect, webhookUrl, getGreeting } from '@/lib/twiml';
+
+const TWILIO_SID = process.env.TWILIO_ACCOUNT_SID;
+const TWILIO_AUTH = process.env.TWILIO_AUTH_TOKEN;
+
+// Start full call recording via Twilio REST API
+async function startCallRecording(callSid) {
+  if (!callSid || !TWILIO_SID || !TWILIO_AUTH) return;
+  try {
+    const authHeader = 'Basic ' + Buffer.from(`${TWILIO_SID}:${TWILIO_AUTH}`).toString('base64');
+    await fetch(
+      `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_SID}/Calls/${callSid}/Recordings.json`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: authHeader,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          RecordingStatusCallback: webhookUrl('/api/twilio/voicemail'),
+          RecordingStatusCallbackEvent: 'completed',
+        }).toString(),
+      }
+    );
+  } catch (err) {
+    console.warn('[twilio/voice] Recording start warning:', err.message);
+  }
+}
 
 async function handleVoiceRequest(request) {
   let callSid = '';
@@ -28,7 +56,12 @@ async function handleVoiceRequest(request) {
     callSid = `LIVE-${Date.now()}`;
   }
 
-  // Safely record session in MongoDB (non-blocking if DB is slow)
+  // Start background whole-call recording
+  if (callSid && !callSid.startsWith('LIVE-')) {
+    startCallRecording(callSid).catch(() => {});
+  }
+
+  // Safely record session in MongoDB
   connectDB().then(() => {
     return CallSession.findOneAndUpdate(
       { callSid },
@@ -45,7 +78,7 @@ async function handleVoiceRequest(request) {
         startTime: new Date(),
         status: 'active',
       },
-      { upsert: true, new: true }
+      { upsert: true, returnDocument: 'after' }
     );
   }).catch((err) => {
     console.warn('[twilio/voice] Session create warning:', err.message);
