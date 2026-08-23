@@ -1,7 +1,4 @@
-// POST /api/twilio/language — Detects language from customer's speech
-// SpeechResult will be "English", "Hindi", "Marathi" (or local variants)
-// Updates session, then asks Sir/Ma'am
-
+// Language detection webhook (supports POST and GET)
 import { NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 import { CallSession } from '@/lib/models/CallSession';
@@ -10,11 +7,26 @@ import {
   detectLanguageFromSpeech, getGreeting
 } from '@/lib/twiml';
 
-export async function POST(request) {
-  const formData    = await request.formData();
-  const callSid     = formData.get('CallSid')      || '';
-  const speechResult = formData.get('SpeechResult') || '';
-  const confidence  = parseFloat(formData.get('Confidence') || '0');
+async function handleLanguage(request) {
+  let callSid = '';
+  let speechResult = '';
+  let confidence = 1;
+
+  try {
+    if (request.method === 'POST') {
+      const formData = await request.formData().catch(() => null);
+      if (formData) {
+        callSid = formData.get('CallSid') || '';
+        speechResult = formData.get('SpeechResult') || '';
+        confidence = parseFloat(formData.get('Confidence') || '1');
+      }
+    }
+    if (!callSid || !speechResult) {
+      const { searchParams } = new URL(request.url);
+      callSid = callSid || searchParams.get('CallSid') || '';
+      speechResult = speechResult || searchParams.get('SpeechResult') || '';
+    }
+  } catch (e) {}
 
   let xml;
 
@@ -22,14 +34,14 @@ export async function POST(request) {
     await connectDB();
     const session = await CallSession.findOne({ callSid });
 
-    // Low confidence or no speech — retry
-    if (!speechResult || confidence < 0.3) {
+    // No speech or low confidence — retry
+    if (!speechResult || confidence < 0.2) {
       xml = twiml(
-        say(getGreeting('langRetry'), 'english') +
         gather({
           action: webhookUrl('/api/twilio/language'),
           language: 'english',
           hints: 'English,Hindi,Marathi,हिंदी,मराठी',
+          prompt: getGreeting('langRetry'),
           speechTimeout: 'auto',
           maxSpeechTime: 8,
         }) +
@@ -40,20 +52,12 @@ export async function POST(request) {
 
     const { language, speechLang } = detectLanguageFromSpeech(speechResult);
 
-    // Update session
     if (session) {
-      session.language   = language;
+      session.language = language;
       session.speechLang = speechLang;
-      // Add bot's language-confirmed message to transcript
-      const confirmText = language === 'hindi'
-        ? 'भाषा चुनने के लिए धन्यवाद!'
-        : language === 'marathi'
-        ? 'भाषा निवडल्याबद्दल धन्यवाद!'
-        : 'Thank you!';
       await session.save();
     }
 
-    // Ask Sir or Ma'am in the detected language
     const honorificPrompt = getGreeting('honorificAsk', language);
     const hints = language === 'hindi'
       ? 'Sir,Ma\'am,Madam,सर,मैडम'
@@ -62,28 +66,32 @@ export async function POST(request) {
       : 'Sir,Ma\'am,Madam';
 
     xml = twiml(
-      say(honorificPrompt, language) +
       gather({
         action: webhookUrl('/api/twilio/honorific'),
         language,
         hints,
+        prompt: honorificPrompt,
         speechTimeout: 'auto',
         maxSpeechTime: 6,
       }) +
-      // Retry if no input
       redirect(webhookUrl('/api/twilio/language'))
     );
 
   } catch (error) {
     console.error('[twilio/language] Error:', error);
-    xml = twiml(
-      say('Sorry, something went wrong. Please call again.', 'english') +
-      '<Hangup/>'
-    );
+    xml = twiml(say('Sorry, something went wrong. Please call again.', 'english') + '<Hangup/>');
   }
 
   return new NextResponse(xml, {
     status: 200,
     headers: { 'Content-Type': 'text/xml; charset=utf-8' },
   });
+}
+
+export async function POST(request) {
+  return handleLanguage(request);
+}
+
+export async function GET(request) {
+  return handleLanguage(request);
 }

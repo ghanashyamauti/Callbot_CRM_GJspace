@@ -1,25 +1,36 @@
-// POST /api/twilio/voice — Entry point for all incoming calls
-// Twilio calls this when a customer dials your Twilio number.
-// Creates a call session and plays Sakshi's greeting.
-
+// Entry point for Twilio calls (supports both GET and POST)
 import { NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 import { CallSession } from '@/lib/models/CallSession';
-import {
-  twiml, say, gather, redirect, webhookUrl, getGreeting
-} from '@/lib/twiml';
+import { twiml, gather, redirect, webhookUrl, getGreeting } from '@/lib/twiml';
 
-export async function POST(request) {
-  const formData = await request.formData();
-  const callSid  = formData.get('CallSid')  || '';
-  const from     = formData.get('From')     || '';
-  const to       = formData.get('To')       || '';
+async function handleVoiceRequest(request) {
+  let callSid = '';
+  let from = '';
+  let to = '';
 
   try {
-    await connectDB();
+    if (request.method === 'POST') {
+      const formData = await request.formData().catch(() => null);
+      if (formData) {
+        callSid = formData.get('CallSid') || '';
+        from = formData.get('From') || '';
+        to = formData.get('To') || '';
+      }
+    }
+    if (!callSid) {
+      const { searchParams } = new URL(request.url);
+      callSid = searchParams.get('CallSid') || `LIVE-${Date.now()}`;
+      from = searchParams.get('From') || '';
+      to = searchParams.get('To') || '';
+    }
+  } catch (e) {
+    callSid = `LIVE-${Date.now()}`;
+  }
 
-    // Create or reset session for this call
-    await CallSession.findOneAndUpdate(
+  // Safely record session in MongoDB (non-blocking if DB is slow)
+  connectDB().then(() => {
+    return CallSession.findOneAndUpdate(
       { callSid },
       {
         callSid,
@@ -36,36 +47,33 @@ export async function POST(request) {
       },
       { upsert: true, new: true }
     );
+  }).catch((err) => {
+    console.warn('[twilio/voice] Session create warning:', err.message);
+  });
 
-    // Sakshi's opening greeting + language selection
-    const xml = twiml(
-      say(getGreeting('intro', 'english'), 'english') +
-      gather({
-        action: webhookUrl('/api/twilio/language'),
-        language: 'english',
-        hints: 'English,Hindi,Marathi,हिंदी,मराठी,अंग्रेज़ी',
-        prompt: '', // already said above
-        speechTimeout: 'auto',
-        maxSpeechTime: 8,
-      }) +
-      // If no input, retry
-      redirect(webhookUrl('/api/twilio/voice'))
-    );
+  // TwiML: Prompt caller with Sakshi's greeting and listen for speech
+  const xml = twiml(
+    gather({
+      action: webhookUrl('/api/twilio/language'),
+      language: 'english',
+      hints: 'English,Hindi,Marathi,हिंदी,मराठी,अंग्रेज़ी',
+      prompt: getGreeting('intro', 'english'),
+      speechTimeout: 'auto',
+      maxSpeechTime: 10,
+    }) +
+    redirect(webhookUrl('/api/twilio/voice'))
+  );
 
-    return new NextResponse(xml, {
-      status: 200,
-      headers: { 'Content-Type': 'text/xml; charset=utf-8' },
-    });
-  } catch (error) {
-    console.error('[twilio/voice] Error:', error);
-    // Fallback: just greet and hang up gracefully
-    const xml = twiml(
-      say('Hello, thank you for calling GJ SpaCes. We are experiencing technical difficulties. Please try again shortly. Goodbye!', 'english') +
-      '<Hangup/>'
-    );
-    return new NextResponse(xml, {
-      status: 200,
-      headers: { 'Content-Type': 'text/xml; charset=utf-8' },
-    });
-  }
+  return new NextResponse(xml, {
+    status: 200,
+    headers: { 'Content-Type': 'text/xml; charset=utf-8' },
+  });
+}
+
+export async function POST(request) {
+  return handleVoiceRequest(request);
+}
+
+export async function GET(request) {
+  return handleVoiceRequest(request);
 }
