@@ -114,11 +114,20 @@ export function getHonorific(name, language = 'english') {
 // Opening intro messages for each language
 export function getSakshiIntro(language = 'english', honorific = 'Sir') {
   if (language === 'hindi') {
-    return `नमस्ते ${honorific}! मेरा नाम सक्षी है, मैं GJ SpaCes की AI सहायक हूं।\n\nमैं आपकी किस प्रकार सहायता कर सकती हूं?\n\n1. सीधे हमारी टीम से बात करें\n2. मुझसे जानकारी प्राप्त करें`;
+    return `नमस्ते ${honorific}! मेरा नाम सक्षी है, मैं GJ SpaCes की AI सहायक हूं। मैं आपकी किस प्रकार सहायता कर सकती हूं?`;
   }
   if (language === 'marathi') {
-    return `नमस्कार ${honorific}! माझे नाव सक्षी आहे, मी GJ SpaCes ची AI सहाय्यक आहे.\n\nमी आपली कशी मदत करू शकते?\n\n1. थेट आमच्या टीमशी बोला\n2. माझ्याकडून माहिती मिळवा`;
+    return `नमस्कार ${honorific}! माझे नाव सक्षी आहे, मी GJ SpaCes ची AI सहाय्यक आहे. मी आपली काय मदत करू शकते?`;
   }
-  // english
-  return `Hello ${honorific}! My name is Sakshi and I am the AI assistant for GJ SpaCes.\n\nHow may I help you today?\n\n1. Talk directly to our team\n2. Chat with me for quick information`;
+  return `Hello ${honorific}! My name is Sakshi, and I am the AI assistant for GJ SpaCes. How can I help you today?`;
+}
+
+export function getSakshiModePrompt(language = 'english') {
+  if (language === 'hindi') {
+    return 'आप मुझसे बात करना चाहते हैं या वॉइसमेल छोड़ना चाहते हैं?';
+  }
+  if (language === 'marathi') {
+    return 'आपण थेट माझ्याशी बोलू इच्छिता की व्हॉइसमेल सोडू इच्छिता?';
+  }
+  return 'Would you like to talk with me directly, or leave a voicemail for our team?';
 }

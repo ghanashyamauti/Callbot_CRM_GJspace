@@ -25,6 +25,7 @@ const CallSchema = new mongoose.Schema({
   sentiment:        { type: String, enum: ['positive', 'neutral', 'negative'], default: 'neutral' },
   resolution:       { type: String, enum: ['resolved', 'pending', 'escalated', 'voicemail'], default: 'pending' },
   language:         { type: String, enum: ['english', 'hindi', 'marathi'], default: 'english' },
+  recordingUrl:     { type: String, default: null }, // actual audio recording url or base64 audio
   waveformData:     { type: [Number], default: [] },
   createdAt:        { type: Date, default: Date.now },
 });

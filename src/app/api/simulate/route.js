@@ -31,6 +31,7 @@ export async function POST(request) {
       sentiment: body.sentiment || 'neutral',
       resolution: body.resolution || 'pending',
       language: body.language || 'english',
+      recordingUrl: body.recordingUrl || null,
       waveformData: body.waveformData || Array.from({ length: 60 }, () => Math.random() * 0.8 + 0.2),
       createdAt: body.startTime || new Date().toISOString(),
     };

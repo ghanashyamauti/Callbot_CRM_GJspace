@@ -82,11 +82,16 @@ export default function TopBar({ title, subtitle, onMenuToggle }) {
   return (
     <header className="topbar">
       <div className="topbar-left">
-        {onMenuToggle && (
-          <button className="mobile-menu-btn" onClick={onMenuToggle} style={{ marginRight: '8px' }}>
-            <Menu size={18} />
-          </button>
-        )}
+        <button
+          className="mobile-menu-btn"
+          onClick={() => {
+            if (onMenuToggle) onMenuToggle();
+            else if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('toggle-sidebar'));
+          }}
+          title="Open Menu"
+        >
+          <Menu size={20} />
+        </button>
         <div>
           <div className="topbar-title">{title || 'Dashboard'}</div>
           {subtitle && <div style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '1px' }}>{subtitle}</div>}

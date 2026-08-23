@@ -9,12 +9,13 @@ function getBaseUrl() {
 }
 
 // ==================== VOICE CONFIG ====================
-// Uses natural neural Indian voices for crystal-clear HD phone audio
+// Polly.Aditi provides high phone volume and clear Indian pronunciation for English and Hindi.
+// Twilio Google Indian TTS provides native Marathi clarity.
 
 const VOICE_CONFIG = {
-  english: { voice: 'Polly.Kajal-Neural', ttsLang: 'en-IN', gatherLang: 'en-IN' },
-  hindi:   { voice: 'Polly.Kajal-Neural', ttsLang: 'hi-IN', gatherLang: 'hi-IN' },
-  marathi: { voice: null,                 ttsLang: 'mr-IN', gatherLang: 'mr-IN' },
+  english: { voice: 'Polly.Aditi', ttsLang: 'en-IN', gatherLang: 'en-IN' },
+  hindi:   { voice: 'Polly.Aditi', ttsLang: 'hi-IN', gatherLang: 'hi-IN' },
+  marathi: { voice: null,          ttsLang: 'mr-IN', gatherLang: 'mr-IN' },
 };
 
 export function getVoiceConfig(language = 'english') {

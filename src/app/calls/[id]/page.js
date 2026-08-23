@@ -35,7 +35,10 @@ export default function CallDetailPage({ params }) {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [activeTab, setActiveTab] = useState('transcript');
-  const audioRef = useRef(null);
+  const [activeBubbleIndex, setActiveBubbleIndex] = useState(-1);
+  const activeAudioRef = useRef(null);
+  const progressTimerRef = useRef(null);
+  const isCancelledRef = useRef(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -56,72 +59,182 @@ export default function CallDetailPage({ params }) {
     }
   }
 
-  // Handle Play / Pause for real Audio or synth
-  function togglePlay() {
-    if (!audioRef.current) return;
-    if (isPlaying) {
-      audioRef.current.pause();
-      setIsPlaying(false);
-      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-      }
-    } else {
-      if (call?.recordingUrl) {
-        audioRef.current.play().then(() => {
-          setIsPlaying(true);
-        }).catch(() => {
-          // If Twilio audio URL needs auth, fallback to vocal speech playback
-          playVocalTranscript();
-        });
-      } else {
-        playVocalTranscript();
-      }
+  // Stop all audio on unmount or navigation
+  useEffect(() => {
+    const handleStop = () => stopAllAudio();
+    window.addEventListener('beforeunload', handleStop);
+    window.addEventListener('popstate', handleStop);
+
+    return () => {
+      stopAllAudio();
+      window.removeEventListener('beforeunload', handleStop);
+      window.removeEventListener('popstate', handleStop);
+    };
+  }, []);
+
+  function stopAllAudio() {
+    isCancelledRef.current = true;
+    if (activeAudioRef.current) {
+      activeAudioRef.current.pause();
+      activeAudioRef.current.currentTime = 0;
+      activeAudioRef.current.src = '';
+      activeAudioRef.current = null;
     }
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    clearInterval(progressTimerRef.current);
+    setIsPlaying(false);
+    setActiveBubbleIndex(-1);
   }
 
-  // Vocal speech playback of the transcript
-  function playVocalTranscript() {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
-    window.speechSynthesis.cancel();
+  // Play Neural Voice dialogue sequence
+  function playNeuralTranscriptSequence(transcript, lang) {
+    if (!transcript || transcript.length === 0) {
+      setIsPlaying(false);
+      return;
+    }
 
-    if (!call?.transcript || call.transcript.length === 0) return;
-
+    isCancelledRef.current = false;
     setIsPlaying(true);
     let index = 0;
+    const startTime = Date.now();
 
-    function speakNext() {
-      if (index >= call.transcript.length) {
-        setIsPlaying(false);
-        setCurrentTime(duration);
+    // Progress timer
+    clearInterval(progressTimerRef.current);
+    progressTimerRef.current = setInterval(() => {
+      if (isCancelledRef.current) return;
+      const elapsed = (Date.now() - startTime) / 1000;
+      setCurrentTime(Math.min(elapsed, duration || 60));
+    }, 200);
+
+    function playNextTurn() {
+      if (isCancelledRef.current) {
+        stopAllAudio();
         return;
       }
-      const msg = call.transcript[index];
-      const utter = new SpeechSynthesisUtterance(msg.text);
-      utter.rate = 1.0;
-      if (call.language === 'hindi') utter.lang = 'hi-IN';
-      else if (call.language === 'marathi') utter.lang = 'mr-IN';
-      else utter.lang = 'en-IN';
 
-      utter.onend = () => {
-        index++;
-        setCurrentTime(Math.min((index / call.transcript.length) * duration, duration));
-        speakNext();
+      if (index >= transcript.length) {
+        stopAllAudio();
+        setCurrentTime(duration || 60);
+        setActiveBubbleIndex(-1);
+        return;
+      }
+
+      setActiveBubbleIndex(index);
+      const msg = transcript[index];
+      const ttsUrl = `/api/tts?language=${lang}&text=${encodeURIComponent(msg.text)}`;
+      const audio = new Audio(ttsUrl);
+      activeAudioRef.current = audio;
+
+      audio.onended = () => {
+        if (!isCancelledRef.current) {
+          index++;
+          playNextTurn();
+        }
       };
-      utter.onerror = () => {
-        setIsPlaying(false);
+
+      audio.onerror = () => {
+        if (isCancelledRef.current) return;
+        // Fallback to browser Web Speech API
+        if ('speechSynthesis' in window) {
+          const utter = new SpeechSynthesisUtterance(msg.text);
+          if (lang === 'hindi') utter.lang = 'hi-IN';
+          else if (lang === 'marathi') utter.lang = 'mr-IN';
+          else utter.lang = 'en-IN';
+          utter.onend = () => {
+            if (!isCancelledRef.current) {
+              index++;
+              playNextTurn();
+            }
+          };
+          utter.onerror = () => stopAllAudio();
+          window.speechSynthesis.speak(utter);
+        } else {
+          index++;
+          playNextTurn();
+        }
       };
-      window.speechSynthesis.speak(utter);
+
+      audio.play().catch(() => {
+        if (isCancelledRef.current) return;
+        if ('speechSynthesis' in window) {
+          const utter = new SpeechSynthesisUtterance(msg.text);
+          if (lang === 'hindi') utter.lang = 'hi-IN';
+          else if (lang === 'marathi') utter.lang = 'mr-IN';
+          else utter.lang = 'en-IN';
+          utter.onend = () => {
+            if (!isCancelledRef.current) {
+              index++;
+              playNextTurn();
+            }
+          };
+          utter.onerror = () => stopAllAudio();
+          window.speechSynthesis.speak(utter);
+        } else {
+          stopAllAudio();
+        }
+      });
     }
-    speakNext();
+
+    playNextTurn();
+  }
+
+  function togglePlay() {
+    if (isPlaying) {
+      stopAllAudio();
+    } else {
+      isCancelledRef.current = false;
+      const lang = call?.language || 'english';
+      const transcript = call?.transcript || [
+        { role: 'bot', text: call?.summary || 'Thank you for calling GJ SpaCes.' }
+      ];
+
+      // If call has recording URL (Twilio or actual user mic recording), play actual audio!
+      if (call?.recordingUrl) {
+        const audio = new Audio(call.recordingUrl);
+        activeAudioRef.current = audio;
+        setIsPlaying(true);
+
+        audio.ontimeupdate = () => {
+          if (!isCancelledRef.current) {
+            setCurrentTime(audio.currentTime);
+          }
+        };
+        audio.onended = () => {
+          stopAllAudio();
+        };
+        audio.onerror = () => {
+          // If external link needs auth, fallback to Neural transcript narration
+          if (!isCancelledRef.current) {
+            playNeuralTranscriptSequence(transcript, lang);
+          }
+        };
+
+        audio.play().catch(() => {
+          if (!isCancelledRef.current) {
+            playNeuralTranscriptSequence(transcript, lang);
+          }
+        });
+      } else {
+        // Play Neural Voice dialogue narration
+        playNeuralTranscriptSequence(transcript, lang);
+      }
+    }
   }
 
   function handleSeek(percent) {
     const newTime = (percent / 100) * (duration || 60);
     setCurrentTime(newTime);
-    if (audioRef.current && call?.recordingUrl) {
-      audioRef.current.currentTime = newTime;
+    if (activeAudioRef.current) {
+      activeAudioRef.current.currentTime = newTime;
     }
   }
+
+  const handleBack = () => {
+    stopAllAudio();
+    router.push('/calls');
+  };
 
   if (loading) {
     return (
@@ -144,7 +257,7 @@ export default function CallDetailPage({ params }) {
             <AlertCircle className="empty-state-icon" size={48} />
             <h3 className="empty-state-title">Call Not Found</h3>
             <p className="empty-state-text">The call you are looking for does not exist.</p>
-            <button className="btn btn-primary" onClick={() => router.push('/calls')}>
+            <button className="btn btn-primary" onClick={handleBack}>
               Back to Call Logs
             </button>
           </div>
@@ -174,7 +287,7 @@ export default function CallDetailPage({ params }) {
       <div className="page-container">
         <button
           className="btn btn-ghost btn-sm"
-          onClick={() => router.push('/calls')}
+          onClick={handleBack}
           style={{ marginBottom: '16px', gap: '6px' }}
         >
           <ArrowLeft size={16} /> Back to Call Logs
@@ -243,24 +356,15 @@ export default function CallDetailPage({ params }) {
           </div>
         </div>
 
-        {/* Audio Recording & Vocal Playback Player */}
+        {/* Audio Recording Player */}
         <div className="audio-player" style={{ marginBottom: '20px' }}>
-          {call.recordingUrl && (
-            <audio
-              ref={audioRef}
-              src={call.recordingUrl}
-              onTimeUpdate={(e) => setCurrentTime(e.target.currentTime)}
-              onLoadedMetadata={(e) => setDuration(e.target.duration || call.duration || 60)}
-              onEnded={() => setIsPlaying(false)}
-            />
-          )}
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
             <span style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Volume2 size={16} style={{ color: 'var(--accent-primary)' }} />
-              Audio Recording & Vocal Playback
+              {call.recordingUrl ? '🎙️ Real Microphone Audio Recording' : '🔊 Voice Dialogue Playback'}
             </span>
-            <span style={{ fontSize: '12px', color: 'var(--accent-primary)', fontWeight: 500 }}>
-              {isPlaying ? 'Playing Audio...' : 'Click Play to Listen'}
+            <span style={{ fontSize: '12px', color: isPlaying ? 'var(--success)' : 'var(--accent-primary)', fontWeight: 600 }}>
+              {isPlaying ? '▶ Playing Audio...' : 'Click Play to Listen'}
             </span>
           </div>
 
@@ -271,7 +375,7 @@ export default function CallDetailPage({ params }) {
                 <div
                   key={i}
                   className={`audio-waveform-bar ${isActive ? 'active' : ''}`}
-                  style={{ height: `${h * 100}%` }}
+                  style={{ height: `${Math.max(h * 100, 15)}%` }}
                   onClick={() => handleSeek((i / 45) * 100)}
                 />
               );
@@ -279,16 +383,23 @@ export default function CallDetailPage({ params }) {
           </div>
 
           <div className="audio-controls">
-            <button className="audio-play-btn" onClick={togglePlay}>
+            <button
+              className="audio-play-btn"
+              onClick={togglePlay}
+              title={isPlaying ? 'Pause' : 'Play Audio'}
+            >
               {isPlaying ? <Pause size={20} /> : <Play size={20} style={{ marginLeft: '2px' }} />}
             </button>
             <span className="audio-time">
               {formatDuration(currentTime)}
             </span>
-            <div className="audio-progress" onClick={(e) => {
-              const rect = e.currentTarget.getBoundingClientRect();
-              handleSeek(((e.clientX - rect.left) / rect.width) * 100);
-            }}>
+            <div
+              className="audio-progress"
+              onClick={(e) => {
+                const rect = e.currentTarget.getBoundingClientRect();
+                handleSeek(((e.clientX - rect.left) / rect.width) * 100);
+              }}
+            >
               <div className="audio-progress-fill" style={{ width: `${playProgress}%` }} />
             </div>
             <span className="audio-time">{formatDuration(duration)}</span>
@@ -312,7 +423,10 @@ export default function CallDetailPage({ params }) {
               {call.transcript && call.transcript.length > 0 ? (
                 <div className="transcript-container" style={{ maxHeight: '600px' }}>
                   {call.transcript.map((msg, i) => (
-                    <div key={i} className={`transcript-bubble ${msg.role === 'bot' ? 'bot' : 'customer'}`}>
+                    <div
+                      key={i}
+                      className={`transcript-bubble ${msg.role === 'bot' ? 'bot' : 'customer'} ${activeBubbleIndex === i ? 'active-speaking' : ''}`}
+                    >
                       <div className="transcript-bubble-label">
                         {msg.role === 'bot' ? (
                           <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><Bot size={12} /> Sakshi (AI Assistant)</span>
@@ -349,6 +463,13 @@ export default function CallDetailPage({ params }) {
           </div>
         )}
       </div>
+
+      <style jsx>{`
+        .active-speaking {
+          border: 2px solid var(--accent-primary) !important;
+          box-shadow: 0 0 16px rgba(47, 124, 255, 0.35) !important;
+        }
+      `}</style>
     </>
   );
 }

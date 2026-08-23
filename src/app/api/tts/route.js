@@ -1,14 +1,22 @@
-// GET / POST /api/tts — Free High-Definition Female Neural Text-to-Speech API
-// Uses Microsoft's premier Indian Female Neural Voices (Neerja, Swara, Aarohi)
+// GET / POST /api/tts — Free High-Quality Indian Female Neural TTS
+// Uses Microsoft Edge TTS via msedge-tts (100% free, no API key needed)
+// Premium Voices: Neerja (English), Swara (Hindi), Aarohi (Marathi)
 
 import { NextResponse } from 'next/server';
 import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
 
-// Premier Indian Female Neural Voice Models
+// Premium Indian Female Neural Voice Models
 const FEMALE_VOICES = {
-  english: 'en-IN-NeerjaNeural', // Crystal clear Indian English Female Receptionist
-  hindi:   'hi-IN-SwaraNeural',  // Melodic, natural Hindi Female Voice
-  marathi: 'mr-IN-AarohiNeural', // Authentic native Marathi Female Voice
+  english: 'en-IN-NeerjaExpressiveNeural', // Most expressive Indian English female
+  hindi:   'hi-IN-SwaraNeural',            // Natural Hindi female
+  marathi: 'mr-IN-AarohiNeural',           // Native Marathi female
+};
+
+// Fallback voices if expressive not available
+const FALLBACK_VOICES = {
+  english: 'en-IN-NeerjaNeural',
+  hindi:   'hi-IN-SwaraNeural',
+  marathi: 'mr-IN-AarohiNeural',
 };
 
 function cleanTextForSpeech(text) {
@@ -19,24 +27,39 @@ function cleanTextForSpeech(text) {
     .replace(/[✓✔•→🎉😊🙏💰📋⚠️🏢📊🎙️📞]/g, '')
     .replace(/₹/g, 'rupees ')
     .replace(/\n+/g, '. ')
+    .replace(/\s+/g, ' ')
     .trim();
 }
 
 async function generateSpeechAudio(rawText, language = 'english') {
-  const voice = FEMALE_VOICES[language] || FEMALE_VOICES.english;
+  const voiceName = FEMALE_VOICES[language] || FEMALE_VOICES.english;
+  const fallback = FALLBACK_VOICES[language] || FALLBACK_VOICES.english;
   const text = cleanTextForSpeech(rawText) || 'Hello from GJ SpaCes!';
 
-  const tts = new MsEdgeTTS();
-  await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+  // Try primary (expressive) voice first, fall back if not available
+  for (const voice of [voiceName, fallback]) {
+    try {
+      const tts = new MsEdgeTTS();
+      // Use highest quality 24kHz audio format
+      await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
 
-  const readable = tts.toStream(text);
-  const chunks = [];
+      const { audioStream } = tts.toStream(text, {
+        rate: '-5%',   // Slightly slower = more natural, conversational
+        pitch: '+5Hz', // Slightly higher pitch = more feminine and warm
+        volume: '+10%', // Clearer volume
+      });
 
-  return new Promise((resolve, reject) => {
-    readable.on('data', (data) => chunks.push(data));
-    readable.on('end', () => resolve(Buffer.concat(chunks)));
-    readable.on('error', (err) => reject(err));
-  });
+      const chunks = [];
+      return await new Promise((resolve, reject) => {
+        audioStream.on('data', (data) => chunks.push(data));
+        audioStream.on('end', () => resolve(Buffer.concat(chunks)));
+        audioStream.on('error', (err) => reject(err));
+      });
+    } catch (err) {
+      if (voice === fallback) throw err; // Both failed
+      console.warn(`[api/tts] Voice ${voice} failed, trying fallback: ${fallback}`);
+    }
+  }
 }
 
 export async function POST(request) {
@@ -51,7 +74,7 @@ export async function POST(request) {
       status: 200,
       headers: {
         'Content-Type': 'audio/mpeg',
-        'Cache-Control': 'public, max-age=3600',
+        'Cache-Control': 'no-cache',
         'Content-Length': audioBuffer.length.toString(),
       },
     });
@@ -73,7 +96,7 @@ export async function GET(request) {
       status: 200,
       headers: {
         'Content-Type': 'audio/mpeg',
-        'Cache-Control': 'public, max-age=3600',
+        'Cache-Control': 'no-cache',
         'Content-Length': audioBuffer.length.toString(),
       },
     });
