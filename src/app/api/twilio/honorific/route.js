@@ -1,6 +1,4 @@
-// POST /api/twilio/honorific — Detects Sir or Ma'am from speech
-// Updates session with honorific, then asks Talk vs Voicemail
-
+// Honorific webhook (Sir/Ma'am) — supports POST and GET
 import { NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 import { CallSession } from '@/lib/models/CallSession';
@@ -9,10 +7,24 @@ import {
   detectHonorificFromSpeech, getGreeting
 } from '@/lib/twiml';
 
-export async function POST(request) {
-  const formData     = await request.formData();
-  const callSid      = formData.get('CallSid')      || '';
-  const speechResult  = formData.get('SpeechResult') || '';
+async function handleHonorific(request) {
+  let callSid = '';
+  let speechResult = '';
+
+  try {
+    if (request.method === 'POST') {
+      const formData = await request.formData().catch(() => null);
+      if (formData) {
+        callSid = formData.get('CallSid') || '';
+        speechResult = formData.get('SpeechResult') || '';
+      }
+    }
+    if (!callSid) {
+      const { searchParams } = new URL(request.url);
+      callSid = searchParams.get('CallSid') || '';
+      speechResult = speechResult || searchParams.get('SpeechResult') || '';
+    }
+  } catch (e) {}
 
   let xml;
 
@@ -21,34 +33,15 @@ export async function POST(request) {
     const session = await CallSession.findOne({ callSid });
     const language = session?.language || 'english';
 
-    if (!speechResult) {
-      // Retry
-      xml = twiml(
-        say(getGreeting('honorificRetry', language), language) +
-        gather({
-          action: webhookUrl('/api/twilio/honorific'),
-          language,
-          hints: 'Sir,Ma\'am,Madam',
-          speechTimeout: 'auto',
-          maxSpeechTime: 5,
-        }) +
-        redirect(webhookUrl('/api/twilio/honorific'))
-      );
-      return new NextResponse(xml, { status: 200, headers: { 'Content-Type': 'text/xml; charset=utf-8' } });
-    }
-
     const honorific = detectHonorificFromSpeech(speechResult);
+    const honorificLabel = honorific === 'maam' ? "Ma'am" : 'Sir';
 
     if (session) {
       session.honorific = honorific;
-      // Add Sakshi's greeting with honorific to transcript
-      const honorificLabel = honorific === 'maam' ? "Ma'am" : 'Sir';
-      const greeting = getGreeting('modeAsk', language);
-      session.transcript.push({ role: 'bot', text: `Hello ${honorificLabel}! ${greeting}` });
+      session.transcript.push({ role: 'bot', text: `Hello ${honorificLabel}!` });
       await session.save();
     }
 
-    const honorificLabel = honorific === 'maam' ? "Ma'am" : 'Sir';
     const modePrompt = getGreeting('modeAsk', language);
     const hints = language === 'hindi'
       ? 'बात करना,बात,talk,message,संदेश छोड़ना,voicemail'
@@ -56,15 +49,7 @@ export async function POST(request) {
       ? 'बोलणे,बोला,talk,message,संदेश,voicemail'
       : 'talk,information,message,leave a message,voicemail';
 
-    // Greet with honorific + ask mode
-    const greetText = language === 'hindi'
-      ? `ठीक है ${honorificLabel}! GJ SpaCes में आपका स्वागत है।`
-      : language === 'marathi'
-      ? `ठीक आहे ${honorificLabel}! GJ SpaCes मध्ये आपले स्वागत आहे.`
-      : `Perfect ${honorificLabel}! Welcome to GJ SpaCes.`;
-
     xml = twiml(
-      say(greetText, language) +
       gather({
         action: webhookUrl('/api/twilio/mode'),
         language,
@@ -78,11 +63,19 @@ export async function POST(request) {
 
   } catch (error) {
     console.error('[twilio/honorific] Error:', error);
-    xml = twiml(say('Sorry, something went wrong. Please call again.', 'english') + '<Hangup/>');
+    xml = twiml(say('How can I help you today? Please tell me.', 'english') + redirect(webhookUrl('/api/twilio/chat')));
   }
 
   return new NextResponse(xml, {
     status: 200,
     headers: { 'Content-Type': 'text/xml; charset=utf-8' },
   });
+}
+
+export async function POST(request) {
+  return handleHonorific(request);
+}
+
+export async function GET(request) {
+  return handleHonorific(request);
 }

@@ -10,12 +10,12 @@ function getBaseUrl() {
 
 // ==================== VOICE CONFIG ====================
 
-// Polly.Aditi: Natural Indian female voice (English + Hindi)
-// Polly.Kajal: Neural Indian female voice (Hindi, more natural) — use when available
+// Polly.Aditi supports en-IN and hi-IN
+// For mr-IN (Marathi), we use standard Twilio TTS which supports Marathi natively
 const VOICE_CONFIG = {
   english: { voice: 'Polly.Aditi', ttsLang: 'en-IN', gatherLang: 'en-IN' },
   hindi:   { voice: 'Polly.Aditi', ttsLang: 'hi-IN', gatherLang: 'hi-IN' },
-  marathi: { voice: 'Polly.Aditi', ttsLang: 'hi-IN', gatherLang: 'mr-IN' }, // No dedicated Marathi Polly voice
+  marathi: { voice: null,          ttsLang: 'mr-IN', gatherLang: 'mr-IN' },
 };
 
 export function getVoiceConfig(language = 'english') {
@@ -57,7 +57,7 @@ export function detectHonorificFromSpeech(speechResult = '') {
   if (
     lower.includes('maam') || lower.includes("ma'am") || lower.includes('madam') ||
     lower.includes('mam') || lower.includes('मैडम') || lower.includes('मेडम') ||
-    lower.includes('madame')
+    lower.includes('मॅडम') || lower.includes('madame')
   ) {
     return 'maam';
   }
@@ -70,7 +70,7 @@ export function detectModeFromSpeech(speechResult = '') {
   if (
     lower.includes('message') || lower.includes('sandesh') || lower.includes('संदेश') ||
     lower.includes('leave') || lower.includes('record') || lower.includes('voicemail') ||
-    lower.includes('chhod') || lower.includes('छोड')
+    lower.includes('chhod') || lower.includes('छोड') || lower.includes('सोडा')
   ) {
     return 'voicemail';
   }
@@ -84,7 +84,7 @@ export function detectFarewellFromSpeech(speechResult = '') {
     'bye', 'goodbye', 'thank you', 'thanks', 'that\'s all', 'thats all',
     'dhanyawad', 'dhanyawaad', 'shukriya', 'alvida', 'theek hai', 'bas itna hi',
     'bas', 'okay bye', 'ok bye', 'no thanks', 'no thank you',
-    'धन्यवाद', 'अलविदा', 'ठीक है', 'बस'
+    'धन्यवाद', 'अलविदा', 'ठीक है', 'बस', 'आभार', 'नमस्कार'
   ];
   return farewellWords.some(w => lower.includes(w));
 }
@@ -99,13 +99,16 @@ export function twiml(innerXml) {
 // <Say> tag with proper voice config
 export function say(text, language = 'english') {
   const { voice, ttsLang } = getVoiceConfig(language);
-  // Escape XML special characters
   const escaped = text
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
-  return `<Say voice="${voice}" language="${ttsLang}">${escaped}</Say>`;
+
+  if (voice) {
+    return `<Say voice="${voice}" language="${ttsLang}">${escaped}</Say>`;
+  }
+  return `<Say language="${ttsLang}">${escaped}</Say>`;
 }
 
 // <Gather> tag for speech input with Say inside
@@ -116,7 +119,7 @@ export function gather(opts = {}) {
     prompt = '',
     speechTimeout = 'auto',
     hints = '',
-    maxSpeechTime = 30,
+    maxSpeechTime = 25,
   } = opts;
 
   const { gatherLang } = getVoiceConfig(language);
@@ -156,8 +159,8 @@ export function record(opts = {}) {
 const GREETINGS = {
   intro: {
     english: 'Hello! My name is Sakshi and I am the AI assistant for GJ SpaCes. Please say your preferred language. Say English, Hindi, or Marathi.',
-    hindi:   'नमस्ते! मेरा नाम सक्षी है, मैं GJ SpaCes की AI सहायक हूं।',
-    marathi: 'नमस्कार! माझे नाव सक्षी आहे, मी GJ SpaCes ची AI सहाय्यक आहे.',
+    hindi:   'नमस्ते! मेरा नाम सक्षी है, मैं GJ SpaCes की AI सहायक हूं। कृपया अपनी भाषा बताएं — हिंदी, अंग्रेजी, या मराठी।',
+    marathi: 'नमस्कार! माझे नाव सक्षी आहे, मी GJ SpaCes ची AI सहाय्यक आहे. कृपया आपली भाषा सांगा — मराठी, हिंदी, किंवा इंग्रजी.',
   },
   honorificAsk: {
     english: 'Should I address you as Sir or Ma\'am?',
@@ -167,7 +170,7 @@ const GREETINGS = {
   modeAsk: {
     english: 'Would you like to talk to me for information, or leave a message for our team?',
     hindi:   'क्या आप मुझसे जानकारी लेना चाहेंगे, या हमारी टीम के लिए संदेश छोड़ना चाहेंगे?',
-    marathi: 'आपल्याला माझ्याशी माहिती हवी आहे, की आमच्या टीमसाठी संदेश ठेवायचा आहे?',
+    marathi: 'आपल्याला माझ्याशी बोलायचे आहे, की आमच्या टीमसाठी संदेश सोडायचा आहे?',
   },
   talkReady: {
     english: (h) => `Great ${h}! Please go ahead and tell me how I can help you today.`,

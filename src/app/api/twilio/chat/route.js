@@ -1,7 +1,4 @@
-// POST /api/twilio/chat — AI conversation loop
-// Called on every customer speech turn during talk mode.
-// Sends to OpenRouter (Gemini Flash) and speaks the reply back.
-
+// AI conversation loop — supports POST and GET
 import { NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 import { CallSession } from '@/lib/models/CallSession';
@@ -11,38 +8,46 @@ import {
   detectFarewellFromSpeech, getGreeting
 } from '@/lib/twiml';
 
-// Trim AI reply to be phone-friendly (shorter, no markdown)
 function sanitizeForPhone(text) {
   return text
-    .replace(/\*\*/g, '')       // remove bold markdown
-    .replace(/\*/g, '')          // remove italic
-    .replace(/#{1,6}\s/g, '')   // remove headers
-    .replace(/✓|✔|•|→|🎉|😊|🙏|💰|📋|⚠️|🏢|📊/g, '') // remove emojis
-    .replace(/₹/g, 'rupees ')   // spell out rupee symbol
-    .replace(/\n+/g, '. ')      // newlines → pauses
+    .replace(/\*\*/g, '')
+    .replace(/\*/g, '')
+    .replace(/#{1,6}\s/g, '')
+    .replace(/✓|✔|•|→|🎉|😊|🙏|💰|📋|⚠️|🏢|📊/g, '')
+    .replace(/₹/g, 'rupees ')
+    .replace(/\n+/g, '. ')
     .trim();
 }
 
-export async function POST(request) {
-  const formData     = await request.formData();
-  const callSid      = formData.get('CallSid')      || '';
-  const speechResult  = formData.get('SpeechResult') || '';
-  const confidence   = parseFloat(formData.get('Confidence') || '0');
+async function handleChat(request) {
+  let callSid = '';
+  let speechResult = '';
+  let confidence = 1;
+
+  try {
+    if (request.method === 'POST') {
+      const formData = await request.formData().catch(() => null);
+      if (formData) {
+        callSid = formData.get('CallSid') || '';
+        speechResult = formData.get('SpeechResult') || '';
+        confidence = parseFloat(formData.get('Confidence') || '1');
+      }
+    }
+    if (!callSid) {
+      const { searchParams } = new URL(request.url);
+      callSid = searchParams.get('CallSid') || '';
+      speechResult = speechResult || searchParams.get('SpeechResult') || '';
+    }
+  } catch (e) {}
 
   let xml;
 
   try {
     await connectDB();
     const session = await CallSession.findOne({ callSid });
+    const language = session?.language || 'english';
 
-    if (!session) {
-      xml = twiml(say('I lost track of our conversation. Please call again. Goodbye!', 'english') + hangup());
-      return new NextResponse(xml, { status: 200, headers: { 'Content-Type': 'text/xml; charset=utf-8' } });
-    }
-
-    const language = session.language || 'english';
-
-    // No speech or very low confidence
+    // Low confidence or silence
     if (!speechResult || confidence < 0.2) {
       const reprompt = language === 'hindi'
         ? 'मुझे सुनाई नहीं दिया। कृपया फिर से बोलें।'
@@ -51,10 +56,10 @@ export async function POST(request) {
         : 'Sorry, I didn\'t catch that. Please say that again.';
 
       xml = twiml(
-        say(reprompt, language) +
         gather({
           action: webhookUrl('/api/twilio/chat'),
           language,
+          prompt: reprompt,
           speechTimeout: 'auto',
           maxSpeechTime: 30,
         }) +
@@ -67,41 +72,44 @@ export async function POST(request) {
     if (detectFarewellFromSpeech(speechResult)) {
       const farewell = getGreeting('farewell', language);
 
-      // Add to transcript
-      session.transcript.push({ role: 'customer', text: speechResult });
-      session.transcript.push({ role: 'bot', text: farewell });
-      await session.save();
+      if (session) {
+        session.transcript.push({ role: 'customer', text: speechResult });
+        session.transcript.push({ role: 'bot', text: farewell });
+        await session.save();
+      }
 
       xml = twiml(say(farewell, language) + hangup());
       return new NextResponse(xml, { status: 200, headers: { 'Content-Type': 'text/xml; charset=utf-8' } });
     }
 
-    // Add customer speech to transcript and aiMessages
-    session.transcript.push({ role: 'customer', text: speechResult });
-    session.aiMessages.push({ role: 'user', content: speechResult });
+    // Add to session
+    if (session) {
+      session.transcript.push({ role: 'customer', text: speechResult });
+      session.aiMessages.push({ role: 'user', content: speechResult });
+    }
 
-    // Call OpenRouter (Gemini Flash)
+    // Query OpenRouter AI
     let aiReply;
     try {
-      aiReply = await askSakshi(session.aiMessages, language);
+      const messages = session?.aiMessages || [{ role: 'user', content: speechResult }];
+      aiReply = await askSakshi(messages, language);
     } catch (aiError) {
       console.error('[twilio/chat] AI error:', aiError);
       aiReply = language === 'hindi'
-        ? 'माफ करें, मुझे अभी तकनीकी समस्या हो रही है। हमारी टीम जल्द ही आपसे संपर्क करेगी।'
+        ? 'GJ SpaCes में को-वर्किंग, प्राइवेट केबिन, और इंटीरियर डिजाइनिंग सेवाएं उपलब्ध हैं। आप साइट विजिट भी बुक कर सकते हैं।'
         : language === 'marathi'
-        ? 'माफ करा, मला आत्ता तांत्रिक अडचण येत आहे. आमची टीम लवकरच संपर्क करेल.'
-        : 'I apologize, I\'m having a technical difficulty. Our team will contact you shortly.';
+        ? 'GJ SpaCes मध्ये को-वर्किंग, खाजगी केबिन आणि इंटिरिअर डिझाइन सेवा उपलब्ध आहेत. आपण साइट व्हिजिट देखील बुक करू शकता.'
+        : 'GJ SpaCes offers flexible coworking plans, private cabins, and full interior design solutions.';
     }
 
-    // Clean reply for voice
     const cleanReply = sanitizeForPhone(aiReply);
 
-    // Save to session
-    session.transcript.push({ role: 'bot', text: cleanReply });
-    session.aiMessages.push({ role: 'assistant', content: cleanReply });
-    await session.save();
+    if (session) {
+      session.transcript.push({ role: 'bot', text: cleanReply });
+      session.aiMessages.push({ role: 'assistant', content: cleanReply });
+      await session.save();
+    }
 
-    // Continue gathering next customer turn
     const continuationHints = language === 'hindi'
       ? 'हां,नहीं,ठीक है,धन्यवाद,अलविदा,और बताइए,booking,price'
       : language === 'marathi'
@@ -109,26 +117,13 @@ export async function POST(request) {
       : 'yes,no,okay,thank you,goodbye,more,booking,price,information';
 
     xml = twiml(
-      say(cleanReply, language) +
       gather({
         action: webhookUrl('/api/twilio/chat'),
         language,
         hints: continuationHints,
+        prompt: cleanReply,
         speechTimeout: 'auto',
         maxSpeechTime: 30,
-      }) +
-      // Silence handler
-      say(
-        language === 'hindi' ? 'क्या आपका और कोई सवाल है?'
-        : language === 'marathi' ? 'आणखी काही प्रश्न आहे का?'
-        : 'Is there anything else I can help you with?',
-        language
-      ) +
-      gather({
-        action: webhookUrl('/api/twilio/chat'),
-        language,
-        speechTimeout: '3',
-        maxSpeechTime: 15,
       }) +
       say(getGreeting('farewell', language), language) +
       hangup()
@@ -136,11 +131,19 @@ export async function POST(request) {
 
   } catch (error) {
     console.error('[twilio/chat] Error:', error);
-    xml = twiml(say('Sorry, something went wrong. Please call us again. Goodbye!', 'english') + hangup());
+    xml = twiml(say('Thank you for calling GJ SpaCes! Have a wonderful day.', 'english') + hangup());
   }
 
   return new NextResponse(xml, {
     status: 200,
     headers: { 'Content-Type': 'text/xml; charset=utf-8' },
   });
+}
+
+export async function POST(request) {
+  return handleChat(request);
+}
+
+export async function GET(request) {
+  return handleChat(request);
 }

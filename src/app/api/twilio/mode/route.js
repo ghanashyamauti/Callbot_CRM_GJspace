@@ -1,6 +1,4 @@
-// POST /api/twilio/mode — Detects Talk vs Voicemail choice
-// Routes to either the AI chat loop or the voicemail recorder
-
+// Mode choice webhook (Talk vs Voicemail) — supports POST and GET
 import { NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 import { CallSession } from '@/lib/models/CallSession';
@@ -9,10 +7,24 @@ import {
   detectModeFromSpeech, getGreeting
 } from '@/lib/twiml';
 
-export async function POST(request) {
-  const formData     = await request.formData();
-  const callSid      = formData.get('CallSid')      || '';
-  const speechResult  = formData.get('SpeechResult') || '';
+async function handleMode(request) {
+  let callSid = '';
+  let speechResult = '';
+
+  try {
+    if (request.method === 'POST') {
+      const formData = await request.formData().catch(() => null);
+      if (formData) {
+        callSid = formData.get('CallSid') || '';
+        speechResult = formData.get('SpeechResult') || '';
+      }
+    }
+    if (!callSid) {
+      const { searchParams } = new URL(request.url);
+      callSid = searchParams.get('CallSid') || '';
+      speechResult = speechResult || searchParams.get('SpeechResult') || '';
+    }
+  } catch (e) {}
 
   let xml;
 
@@ -21,21 +33,6 @@ export async function POST(request) {
     const session = await CallSession.findOne({ callSid });
     const language = session?.language || 'english';
     const honorific = session?.honorific === 'maam' ? "Ma'am" : 'Sir';
-
-    if (!speechResult) {
-      xml = twiml(
-        say(getGreeting('modeRetry', language), language) +
-        gather({
-          action: webhookUrl('/api/twilio/mode'),
-          language,
-          hints: 'talk,message,voicemail,बात,संदेश',
-          speechTimeout: 'auto',
-          maxSpeechTime: 8,
-        }) +
-        redirect(webhookUrl('/api/twilio/mode'))
-      );
-      return new NextResponse(xml, { status: 200, headers: { 'Content-Type': 'text/xml; charset=utf-8' } });
-    }
 
     const mode = detectModeFromSpeech(speechResult);
 
@@ -62,7 +59,6 @@ export async function POST(request) {
       // === TALK FLOW ===
       const talkPrompt = getGreeting('talkReady', language, honorific);
 
-      // Add bot opening to transcript + aiMessages
       if (session) {
         session.transcript.push({ role: 'bot', text: talkPrompt });
         session.aiMessages.push({ role: 'assistant', content: talkPrompt });
@@ -76,32 +72,33 @@ export async function POST(request) {
         : 'information,price,booking,coworking,interior design,problem,complaint,help';
 
       xml = twiml(
-        say(talkPrompt, language) +
         gather({
           action: webhookUrl('/api/twilio/chat'),
           language,
           hints: listenHints,
+          prompt: talkPrompt,
           speechTimeout: 'auto',
           maxSpeechTime: 30,
         }) +
-        // If silence, gently prompt
-        say(
-          language === 'hindi' ? 'क्या आप अभी भी वहां हैं? बताइए मैं आपकी कैसे मदद कर सकती हूं।'
-          : language === 'marathi' ? 'आपण अजून आहात का? सांगा मी कशी मदत करू.'
-          : 'Are you still there? Please go ahead and ask your question.',
-          language
-        ) +
-        redirect(webhookUrl('/api/twilio/mode'))
+        redirect(webhookUrl('/api/twilio/chat'))
       );
     }
 
   } catch (error) {
     console.error('[twilio/mode] Error:', error);
-    xml = twiml(say('Sorry, something went wrong. Please call again.', 'english') + '<Hangup/>');
+    xml = twiml(say('Please tell me your query, how can I assist you?', 'english') + redirect(webhookUrl('/api/twilio/chat')));
   }
 
   return new NextResponse(xml, {
     status: 200,
     headers: { 'Content-Type': 'text/xml; charset=utf-8' },
   });
+}
+
+export async function POST(request) {
+  return handleMode(request);
+}
+
+export async function GET(request) {
+  return handleMode(request);
 }
