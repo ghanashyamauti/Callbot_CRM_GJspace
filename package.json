@@ -8,7 +8,6 @@
     "start": "next start"
   },
   "dependencies": {
-    "@videosdk.live/js-sdk": "^1.1.1",
     "date-fns": "^4.4.0",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",

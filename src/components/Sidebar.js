@@ -6,7 +6,6 @@ import {
   LayoutDashboard,
   Phone,
   Users,
-  Radio,
   Zap,
   Download,
   LogOut,
@@ -17,7 +16,6 @@ const navItems = [
   { label: 'Dashboard', href: '/', icon: LayoutDashboard },
   { label: 'Call Logs', href: '/calls', icon: Phone },
   { label: 'Customers', href: '/customers', icon: Users },
-  { label: 'VideoSDK Call', href: '/videosdk', icon: Radio },
   { label: 'Simulator', href: '/simulate', icon: Zap },
   { label: 'Export', href: '/export', icon: Download },
 ];
