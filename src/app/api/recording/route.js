@@ -47,6 +47,7 @@ export async function GET(request) {
       headers: {
         'Content-Type': contentType,
         'Content-Length': audioBuffer.byteLength.toString(),
+        'Accept-Ranges': 'bytes',
         'Cache-Control': 'public, max-age=86400', // Cache for 24 hours
       },
     });
