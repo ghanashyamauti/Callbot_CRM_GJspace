@@ -1,9 +1,9 @@
-// Language detection webhook (supports POST and GET)
+// Language detection → immediately ask for Name (streamlined, skip honorific)
 import { NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 import { CallSession } from '@/lib/models/CallSession';
 import {
-  twiml, say, gather, redirect, webhookUrl,
+  twiml, gather, redirect, webhookUrl,
   detectLanguageFromSpeech, getGreeting
 } from '@/lib/twiml';
 
@@ -34,8 +34,8 @@ async function handleLanguage(request) {
     await connectDB();
     const session = await CallSession.findOne({ callSid });
 
-    // No speech or low confidence — retry
-    if (!speechResult || confidence < 0.2) {
+    // No speech or too low confidence — retry language prompt
+    if (!speechResult || confidence < 0.15) {
       xml = twiml(
         gather({
           action: webhookUrl('/api/twilio/language'),
@@ -55,31 +55,40 @@ async function handleLanguage(request) {
     if (session) {
       session.language = language;
       session.speechLang = speechLang;
+      session.honorific = 'sir'; // default — skip honorific step
+      session.transcript.push({ role: 'customer', text: `Language: ${language}` });
       await session.save();
     }
 
-    const honorificPrompt = getGreeting('honorificAsk', language);
-    const hints = language === 'hindi'
-      ? 'Sir,Ma\'am,Madam,सर,मैडम'
-      : language === 'marathi'
-      ? 'Sir,Ma\'am,Madam,सर,मॅडम'
-      : 'Sir,Ma\'am,Madam';
+    // Go straight to asking the customer's name (no honorific step)
+    const namePrompt = getGreeting('nameAsk', language);
 
     xml = twiml(
       gather({
-        action: webhookUrl('/api/twilio/honorific'),
+        action: webhookUrl('/api/twilio/name'),
         language,
-        hints,
-        prompt: honorificPrompt,
+        prompt: namePrompt,
         speechTimeout: 'auto',
-        maxSpeechTime: 6,
+        maxSpeechTime: 10,
+        hints: language === 'hindi' ? 'मेरा नाम,मैं,my name is' 
+             : language === 'marathi' ? 'माझे नाव,मी,my name is'
+             : 'my name is,I am,this is',
       }) +
-      redirect(webhookUrl('/api/twilio/language'))
+      redirect(webhookUrl('/api/twilio/name'))
     );
 
   } catch (error) {
     console.error('[twilio/language] Error:', error);
-    xml = twiml(say('Sorry, something went wrong. Please call again.', 'english') + '<Hangup/>');
+    xml = twiml(
+      gather({
+        action: webhookUrl('/api/twilio/name'),
+        language: 'english',
+        prompt: 'May I know your good name please?',
+        speechTimeout: 'auto',
+        maxSpeechTime: 10,
+      }) +
+      redirect(webhookUrl('/api/twilio/name'))
+    );
   }
 
   return new NextResponse(xml, {

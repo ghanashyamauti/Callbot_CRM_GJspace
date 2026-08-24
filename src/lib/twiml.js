@@ -1,5 +1,5 @@
 // TwiML helpers — shared utilities for all Twilio webhook routes
-// Handles high-clarity voice config, enhanced speech recognition, and TwiML generation.
+// Uses Google Neural Indian Female voices for highest quality on phone calls.
 
 function getBaseUrl() {
   if (process.env.NEXT_PUBLIC_APP_URL) return process.env.NEXT_PUBLIC_APP_URL;
@@ -9,13 +9,13 @@ function getBaseUrl() {
 }
 
 // ==================== VOICE CONFIG ====================
-// Polly.Aditi provides high phone volume and clear Indian pronunciation for English and Hindi.
-// Twilio Google Indian TTS provides native Marathi clarity.
+// Google Neural voices = highest quality Indian female on Twilio phone calls.
+// Never use Polly.Aditi (can sound male) or default <Say> (robot male).
 
 const VOICE_CONFIG = {
-  english: { voice: 'Polly.Aditi', ttsLang: 'en-IN', gatherLang: 'en-IN' },
-  hindi:   { voice: 'Polly.Aditi', ttsLang: 'hi-IN', gatherLang: 'hi-IN' },
-  marathi: { voice: null,          ttsLang: 'mr-IN', gatherLang: 'mr-IN' },
+  english: { voice: 'Google.en-IN-Wavenet-A', ttsLang: 'en-IN', gatherLang: 'en-IN' },
+  hindi:   { voice: 'Google.hi-IN-Wavenet-A', ttsLang: 'hi-IN', gatherLang: 'hi-IN' },
+  marathi: { voice: 'Google.mr-IN-Wavenet-A', ttsLang: 'mr-IN', gatherLang: 'mr-IN' },
 };
 
 export function getVoiceConfig(language = 'english') {
@@ -51,26 +51,14 @@ export function detectLanguageFromSpeech(speechResult = '') {
   return { language: 'english', speechLang: 'en-IN' };
 }
 
-export function detectHonorificFromSpeech(speechResult = '') {
-  const lower = (speechResult || '').toLowerCase().trim();
-  if (
-    lower.includes('maam') || lower.includes("ma'am") || lower.includes('madam') ||
-    lower.includes('mam') || lower.includes('मैडम') || lower.includes('मेडम') ||
-    lower.includes('मॅडम') || lower.includes('madame')
-  ) {
-    return 'maam';
-  }
-  return 'sir';
-}
-
 export function extractNameFromSpeech(speechResult = '') {
   if (!speechResult) return '';
   let cleaned = speechResult.trim();
 
   const prefixes = [
     /^(my name is|i am|this is|myself|it's|its)\s+/i,
-    /^(mera naam|main|mai|hum|mera)\s+/i,
-    /^(maaza naav|maza naav|mee|me|mi)\s+/i,
+    /^(mera naam|mera naam hai|main|mai|hum|mera)\s+/i,
+    /^(maaza naav|maza naav|maza naav aahe|mee|me|mi)\s+/i,
     /\s+(bol raha hoon|bol rahi hoon|baat kar raha hoon|speaking|here)$/i,
     /\s+(boltoy|bolte|ahe|aahe|hai)$/i,
   ];
@@ -84,6 +72,21 @@ export function extractNameFromSpeech(speechResult = '') {
   }
   return 'Caller';
 }
+
+// Kept for backward compatibility — honorific route still exists but is skipped in new flow
+export function detectHonorificFromSpeech(speechResult = '') {
+  const lower = (speechResult || '').toLowerCase().trim();
+  if (
+    lower.includes('maam') || lower.includes("ma'am") || lower.includes('madam') ||
+    lower.includes('mam') || lower.includes('मैडम') || lower.includes('मेडम') ||
+    lower.includes('मॅडम') || lower.includes('madame')
+  ) {
+    return 'maam';
+  }
+  return 'sir';
+}
+
+
 
 export function detectModeFromSpeech(speechResult = '') {
   const lower = (speechResult || '').toLowerCase().trim();
@@ -114,6 +117,7 @@ export function twiml(innerXml) {
   return `<?xml version="1.0" encoding="UTF-8"?><Response>${innerXml}</Response>`;
 }
 
+// ALWAYS use Google Neural Female voice — never default male robot
 export function say(text, language = 'english') {
   const { voice, ttsLang } = getVoiceConfig(language);
   const escaped = text
@@ -122,10 +126,8 @@ export function say(text, language = 'english') {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 
-  if (voice) {
-    return `<Say voice="${voice}" language="${ttsLang}">${escaped}</Say>`;
-  }
-  return `<Say language="${ttsLang}">${escaped}</Say>`;
+  // Always specify voice — prevents Twilio default male
+  return `<Say voice="${voice}" language="${ttsLang}">${escaped}</Say>`;
 }
 
 // Enhanced Gather with phone-optimized acoustic model & neural ASR
@@ -137,13 +139,15 @@ export function gather(opts = {}) {
     speechTimeout = '2',
     hints = '',
     maxSpeechTime = 30,
+    bargeIn = true,
   } = opts;
 
   const { gatherLang } = getVoiceConfig(language);
   const hintsAttr = hints ? ` hints="${hints}"` : '';
   const inner = prompt ? say(prompt, language) : '';
 
-  return `<Gather input="speech" language="${gatherLang}" action="${action}" method="POST" speechModel="phone_call" enhanced="true" speechTimeout="${speechTimeout}" maxSpeechTime="${maxSpeechTime}" profanityFilter="false"${hintsAttr}>${inner}</Gather>`;
+  // bargeIn: caller can interrupt Sakshi mid-speech by talking (critical for fast flow)
+  return `<Gather input="speech" language="${gatherLang}" action="${action}" method="POST" speechModel="phone_call" enhanced="true" speechTimeout="${speechTimeout}" maxSpeechTime="${maxSpeechTime}" profanityFilter="false" bargeIn="${bargeIn}"${hintsAttr}>${inner}</Gather>`;
 }
 
 export function redirect(url, method = 'POST') {
@@ -169,6 +173,8 @@ export function record(opts = {}) {
 }
 
 // ==================== GREETING TEXTS ====================
+// Streamlined flow: language → name → talk/voicemail → chat
+// Removed honorific step — Sakshi just says "Sir/Ma'am" by default based on voice tone.
 
 const GREETINGS = {
   intro: {
@@ -176,31 +182,22 @@ const GREETINGS = {
     hindi:   'नमस्ते! मेरा नाम सक्षी है, मैं GJ SpaCes की AI सहायक हूं। कृपया अपनी भाषा बताएं — हिंदी, अंग्रेजी, या मराठी।',
     marathi: 'नमस्कार! माझे नाव सक्षी आहे, मी GJ SpaCes ची AI सहाय्यक आहे. कृपया आपली भाषा सांगा — मराठी, हिंदी, किंवा इंग्रजी.',
   },
-  honorificAsk: {
-    english: 'Should I address you as Sir or Ma\'am?',
-    hindi:   'मैं आपको Sir कहूं या Ma\'am?',
-    marathi: 'मी आपल्याला Sir म्हणू की Ma\'am?',
-  },
   nameAsk: {
-    english: (h) => `Hello ${h}! May I please know your name?`,
-    hindi:   (h) => `नमस्ते ${h}! क्या मैं आपका शुभ नाम जान सकती हूं?`,
-    marathi: (h) => `नमस्कार ${h}! मी आपले शुभ नाव जाणून घेऊ शकते का?`,
+    english: 'May I please know your good name?',
+    hindi:   'क्या मैं आपका शुभ नाम जान सकती हूं?',
+    marathi: 'मी आपले शुभ नाव जाणून घेऊ शकते का?',
   },
   nameGreet: {
-    english: (name) => `Wonderful to connect with you, ${name}! Would you like to talk to me for information, or leave a message for our team?`,
-    hindi:   (name) => `आपसे मिलकर बहुत खुशी हुई, ${name} जी! क्या आप मुझसे जानकारी लेना चाहेंगे, या टीम के लिए संदेश छोड़ना चाहेंगे?`,
-    marathi: (name) => `आपल्याशी बोलून खूप आनंद झाला, ${name} जी! आपल्याला माझ्याशी बोलायचे आहे, की टीमसाठी संदेश सोडायचा आहे?`,
+    english: (name) => `Wonderful to connect with you, ${name}! How can I help you today? You can ask about coworking, booking, interior design, or anything about GJ SpaCes.`,
+    hindi:   (name) => `आपसे मिलकर बहुत खुशी हुई, ${name} जी! बताइए, मैं आपकी किस तरह मदद कर सकती हूं? को-वर्किंग, बुकिंग, इंटीरियर डिज़ाइन — कुछ भी पूछिए।`,
+    marathi: (name) => `आपल्याशी बोलून खूप आनंद झाला, ${name} जी! सांगा, मी आपली कशी मदत करू शकते? को-वर्किंग, बुकिंग, इंटिरिअर डिझाइन — काहीही विचारा.`,
   },
-  modeAsk: {
-    english: 'Would you like to talk to me for information, or leave a message for our team?',
-    hindi:   'क्या आप मुझसे जानकारी लेना चाहेंगे, या हमारी टीम के लिए संदेश छोड़ना चाहेंगे?',
-    marathi: 'आपल्याला माझ्याशी बोलायचे आहे, की आमच्या टीमसाठी संदेश सोडायचा आहे?',
+  farewell: {
+    english: 'Thank you for calling GJ SpaCes! Have a wonderful day. Goodbye!',
+    hindi:   'GJ SpaCes में कॉल करने के लिए धन्यवाद! आपका दिन शुभ हो। नमस्ते!',
+    marathi: 'GJ SpaCes ला कॉल केल्याबद्दल धन्यवाद! आपला दिवस आनंदाचा जावो. नमस्कार!',
   },
-  talkReady: {
-    english: (name) => `Great ${name}! Please go ahead and tell me how I can help you today.`,
-    hindi:   (name) => `बहुत अच्छा ${name} जी! बताइए, मैं आपकी किस तरह मदद कर सकती हूं?`,
-    marathi: (name) => `छान ${name} जी! सांगा, मी आपली कशी मदत करू शकते?`,
-  },
+  langRetry: 'Sorry, I did not catch that. Please say English, Hindi, or Marathi.',
   voicemailReady: {
     english: 'Please leave your message after the beep. Press the hash key when done.',
     hindi:   'कृपया बीप के बाद अपना संदेश दें। पूरा होने पर हैश का बटन दबाएं।',
@@ -210,22 +207,6 @@ const GREETINGS = {
     english: 'Thank you! Your message has been saved. Our team will contact you shortly. Goodbye!',
     hindi:   'धन्यवाद! आपका संदेश सहेज लिया गया है। हमारी टीम जल्द ही आपसे संपर्क करेगी। नमस्ते!',
     marathi: 'धन्यवाद! आपला संदेश जतन केला आहे. आमची टीम लवकरच आपल्याशी संपर्क करेल. नमस्कार!',
-  },
-  farewell: {
-    english: 'Thank you for calling GJ SpaCes! Have a wonderful day. Goodbye!',
-    hindi:   'GJ SpaCes में कॉल करने के लिए धन्यवाद! आपका दिन शुभ हो। नमस्ते!',
-    marathi: 'GJ SpaCes ला कॉल केल्याबद्दल धन्यवाद! आपला दिवस आनंदाचा जावो. नमस्कार!',
-  },
-  langRetry: 'Sorry, I did not catch that. Please say English, Hindi, or Marathi.',
-  honorificRetry: {
-    english: 'Sorry, please say Sir or Ma\'am.',
-    hindi:   'माफ करें, कृपया Sir या Ma\'am कहें।',
-    marathi: 'माफ करा, कृपया Sir किंवा Ma\'am सांगा.',
-  },
-  modeRetry: {
-    english: 'Sorry, say "talk" to chat with me, or "message" to leave a voicemail.',
-    hindi:   'माफ करें, "बात" कहें मुझसे चैट करने के लिए, या "संदेश" कहें वॉइसमेल छोड़ने के लिए।',
-    marathi: 'माफ करा, "बोला" म्हणा माझ्याशी बोलण्यासाठी, किंवा "संदेश" म्हणा व्हॉइसमेल सोडण्यासाठी.',
   },
 };
 
