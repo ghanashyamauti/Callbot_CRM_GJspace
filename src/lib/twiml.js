@@ -188,9 +188,9 @@ const GREETINGS = {
     marathi: 'मी आपले शुभ नाव जाणून घेऊ शकते का?',
   },
   nameGreet: {
-    english: (name) => `Wonderful to connect with you, ${name}! How can I help you today? You can ask about coworking, booking, interior design, or anything about GJ SpaCes.`,
-    hindi:   (name) => `आपसे मिलकर बहुत खुशी हुई, ${name} जी! बताइए, मैं आपकी किस तरह मदद कर सकती हूं? को-वर्किंग, बुकिंग, इंटीरियर डिज़ाइन — कुछ भी पूछिए।`,
-    marathi: (name) => `आपल्याशी बोलून खूप आनंद झाला, ${name} जी! सांगा, मी आपली कशी मदत करू शकते? को-वर्किंग, बुकिंग, इंटिरिअर डिझाइन — काहीही विचारा.`,
+    english: (name) => `Wonderful to connect with you, ${name}! How can I help you today? You can ask about plots, flats, property, or anything about GJ SpaCes.`,
+    hindi:   (name) => `आपसे मिलकर बहुत खुशी हुई, ${name} जी! बताइए, मैं आपकी किस तरह मदद कर सकती हूं? प्लॉट, फ्लैट, प्रॉपर्टी — कुछ भी पूछिए।`,
+    marathi: (name) => `आपल्याशी बोलून खूप आनंद झाला, ${name} जी! सांगा, मी आपली कशी मदत करू शकते? प्लॉट, फ्लॅट, प्रॉपर्टी — काहीही विचारा.`,
   },
   farewell: {
     english: 'Thank you for calling GJ SpaCes! Have a wonderful day. Goodbye!',

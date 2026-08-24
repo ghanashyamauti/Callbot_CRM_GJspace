@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, use } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import {
   ArrowLeft, Phone, Clock, Tag, Smile, AlertCircle,
   Play, Pause, User, Bot, MapPin, Mail, Calendar,
@@ -40,6 +40,7 @@ export default function CallDetailPage({ params }) {
   const progressTimerRef = useRef(null);
   const isCancelledRef = useRef(false);
   const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
     fetchCall();
@@ -71,6 +72,11 @@ export default function CallDetailPage({ params }) {
       window.removeEventListener('popstate', handleStop);
     };
   }, []);
+
+  // Stop audio when navigating to a different page (back button fix)
+  useEffect(() => {
+    stopAllAudio();
+  }, [pathname]);
 
   function stopAllAudio() {
     isCancelledRef.current = true;
@@ -178,6 +184,33 @@ export default function CallDetailPage({ params }) {
     }
 
     playNextTurn();
+  }
+
+  // Play a SINGLE transcript line when user clicks on it
+  function playTranscriptLine(index) {
+    if (!call?.transcript?.[index]) return;
+    const lang = call?.language || 'english';
+    const msg = call.transcript[index];
+
+    // Stop anything currently playing
+    stopAllAudio();
+    isCancelledRef.current = false;
+
+    setActiveBubbleIndex(index);
+    setIsPlaying(true);
+
+    const ttsUrl = `/api/tts?language=${lang}&text=${encodeURIComponent(msg.text)}`;
+    const audio = new Audio(ttsUrl);
+    activeAudioRef.current = audio;
+
+    const onDone = () => {
+      setIsPlaying(false);
+      setActiveBubbleIndex(-1);
+    };
+
+    audio.onended = onDone;
+    audio.onerror = onDone;
+    audio.play().catch(onDone);
   }
 
   function togglePlay() {
@@ -438,6 +471,9 @@ export default function CallDetailPage({ params }) {
                     <div
                       key={i}
                       className={`transcript-bubble ${msg.role === 'bot' ? 'bot' : 'customer'} ${activeBubbleIndex === i ? 'active-speaking' : ''}`}
+                      onClick={() => playTranscriptLine(i)}
+                      style={{ cursor: 'pointer' }}
+                      title="Click to play this line"
                     >
                       <div className="transcript-bubble-label">
                         {msg.role === 'bot' ? (
@@ -445,6 +481,9 @@ export default function CallDetailPage({ params }) {
                         ) : (
                           <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><User size={12} /> {call.customerName}</span>
                         )}
+                        <span style={{ marginLeft: 'auto', fontSize: '10px', color: 'var(--text-tertiary)', opacity: 0.7 }}>
+                          {activeBubbleIndex === i ? '🔊 Playing...' : '▶ Click to play'}
+                        </span>
                       </div>
                       <div style={{ whiteSpace: 'pre-line' }}>{msg.text}</div>
                     </div>

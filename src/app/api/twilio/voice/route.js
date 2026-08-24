@@ -23,7 +23,7 @@ async function startCallRecording(callSid) {
           'Content-Type': 'application/x-www-form-urlencoded',
         },
         body: new URLSearchParams({
-          RecordingChannels: 'dual',  // Both sides recorded
+          // Mono (default) = both user's real voice + Sakshi's voice MIXED into one track
           RecordingStatusCallback: webhookUrl('/api/twilio/recording-status'),
           RecordingStatusCallbackEvent: 'completed',
         }).toString(),

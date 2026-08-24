@@ -161,10 +161,10 @@ async function handleChat(request) {
     } catch (aiError) {
       console.error('[twilio/chat] AI error:', aiError);
       aiReply = language === 'hindi'
-        ? 'GJ SpaCes में को-वर्किंग, प्राइवेट केबिन, और इंटीरियर डिजाइनिंग सेवाएं उपलब्ध हैं। आप साइट विजिट भी बुक कर सकते हैं।'
+        ? 'GJ SpaCes में प्लॉट, फ्लैट और प्रॉपर्टी उपलब्ध हैं। हमारी टीम जल्द ही आपसे संपर्क करेगी।'
         : language === 'marathi'
-        ? 'GJ SpaCes मध्ये को-वर्किंग, खाजगी केबिन आणि इंटिरिअर डिझाइन सेवा उपलब्ध आहेत. आपण साइट व्हिजिट देखील बुक करू शकता.'
-        : 'GJ SpaCes offers flexible coworking plans, private cabins, and full interior design solutions.';
+        ? 'GJ SpaCes मध्ये प्लॉट, फ्लॅट आणि प्रॉपर्टी उपलब्ध आहेत. आमची टीम लवकरच आपल्याशी संपर्क करेल.'
+        : 'GJ SpaCes offers residential plots, flats, and property solutions in Pune. Our team will contact you shortly with details.';
     }
 
     const cleanReply = sanitizeForPhone(aiReply);
