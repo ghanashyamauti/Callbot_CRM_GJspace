@@ -190,9 +190,15 @@ export default function CallDetailPage({ params }) {
         { role: 'bot', text: call?.summary || 'Thank you for calling GJ SpaCes.' }
       ];
 
-      // If call has recording URL (Twilio or actual user mic recording), play actual audio!
+      // If call has recording URL (Twilio or simulator), play actual audio!
       if (call?.recordingUrl) {
-        const audio = new Audio(call.recordingUrl);
+        // Twilio recording URLs need auth — proxy through our API
+        let audioSrc = call.recordingUrl;
+        if (audioSrc.includes('twilio.com') || audioSrc.includes('api.twilio.com')) {
+          audioSrc = `/api/recording?url=${encodeURIComponent(audioSrc)}`;
+        }
+        
+        const audio = new Audio(audioSrc);
         activeAudioRef.current = audio;
         setIsPlaying(true);
 
@@ -201,11 +207,16 @@ export default function CallDetailPage({ params }) {
             setCurrentTime(audio.currentTime);
           }
         };
+        audio.onloadedmetadata = () => {
+          if (audio.duration && isFinite(audio.duration)) {
+            setDuration(audio.duration);
+          }
+        };
         audio.onended = () => {
           stopAllAudio();
         };
         audio.onerror = () => {
-          // If external link needs auth, fallback to Neural transcript narration
+          // If recording can't be played, fallback to Neural transcript narration
           if (!isCancelledRef.current) {
             playNeuralTranscriptSequence(transcript, lang);
           }
@@ -216,6 +227,7 @@ export default function CallDetailPage({ params }) {
             playNeuralTranscriptSequence(transcript, lang);
           }
         });
+
       } else {
         // Play Neural Voice dialogue narration
         playNeuralTranscriptSequence(transcript, lang);

@@ -93,7 +93,7 @@ export async function POST(request) {
     const callData = {
       id:               uuidv4(),
       callId:           generateCallId(callSid),
-      customerName:     formatPhoneAsName(from),  // Will be enriched if customer gave name
+      customerName:     session.customerName || formatPhoneAsName(from),
       customerPhone:    from,
       customerEmail:    '',
       customerLocation: 'Pune',

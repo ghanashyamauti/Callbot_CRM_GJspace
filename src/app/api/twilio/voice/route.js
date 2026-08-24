@@ -8,12 +8,13 @@ import { twiml, gather, redirect, webhookUrl, getGreeting } from '@/lib/twiml';
 const TWILIO_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH = process.env.TWILIO_AUTH_TOKEN;
 
-// Start full call recording via Twilio REST API
+// Start full-call dual-channel recording via Twilio REST API
+// Records BOTH user's real voice + Sakshi's voice on separate channels
 async function startCallRecording(callSid) {
   if (!callSid || !TWILIO_SID || !TWILIO_AUTH) return;
   try {
     const authHeader = 'Basic ' + Buffer.from(`${TWILIO_SID}:${TWILIO_AUTH}`).toString('base64');
-    await fetch(
+    const res = await fetch(
       `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_SID}/Calls/${callSid}/Recordings.json`,
       {
         method: 'POST',
@@ -22,15 +23,19 @@ async function startCallRecording(callSid) {
           'Content-Type': 'application/x-www-form-urlencoded',
         },
         body: new URLSearchParams({
-          RecordingStatusCallback: webhookUrl('/api/twilio/voicemail'),
+          RecordingChannels: 'dual',  // Both sides recorded
+          RecordingStatusCallback: webhookUrl('/api/twilio/recording-status'),
           RecordingStatusCallbackEvent: 'completed',
         }).toString(),
       }
     );
+    const data = await res.json();
+    console.log(`[twilio/voice] Recording started: ${data.sid || 'unknown'}`);
   } catch (err) {
     console.warn('[twilio/voice] Recording start warning:', err.message);
   }
 }
+
 
 async function handleVoiceRequest(request) {
   let callSid = '';
