@@ -7,8 +7,8 @@ import { Call } from '@/lib/models/Call';
 import { Customer } from '@/lib/models/Customer';
 import { askSakshi, generateCallSummary } from '@/lib/ai';
 import {
-  twiml, say, gather, redirect, hangup, webhookUrl,
-  detectFarewellFromSpeech, getGreeting
+  twiml, say, gather, record, redirect, hangup, webhookUrl,
+  detectFarewellFromSpeech, detectModeFromSpeech, getGreeting
 } from '@/lib/twiml';
 
 function sanitizeForPhone(text) {
@@ -147,6 +147,30 @@ async function handleChat(request) {
       return new NextResponse(xml, { status: 200, headers: { 'Content-Type': 'text/xml; charset=utf-8' } });
     }
 
+    // Check for voicemail / leave message intent
+    if (detectModeFromSpeech(speechResult) === 'voicemail') {
+      const vmPrompt = getGreeting('voicemailReady', language);
+
+      if (session) {
+        session.transcript.push({ role: 'customer', text: speechResult });
+        session.transcript.push({ role: 'bot', text: vmPrompt });
+        session.mode = 'voicemail';
+        await session.save();
+      }
+
+      xml = twiml(
+        say(vmPrompt, language) +
+        record({
+          action: webhookUrl('/api/twilio/voicemail'),
+          maxLength: 120,
+          playBeep: true,
+          transcribe: true,
+          transcribeCallback: webhookUrl('/api/twilio/voicemail-transcript'),
+        })
+      );
+      return new NextResponse(xml, { status: 200, headers: { 'Content-Type': 'text/xml; charset=utf-8' } });
+    }
+
     // Add to session
     if (session) {
       session.transcript.push({ role: 'customer', text: speechResult });
@@ -178,10 +202,10 @@ async function handleChat(request) {
     }
 
     const continuationHints = language === 'hindi'
-      ? 'हां,नहीं,ठीक है,धन्यवाद,अलविदा,और बताइए,booking,price'
+      ? 'हां,नहीं,ठीक है,धन्यवाद,अलविदा,और बताइए,message,संदेश,record'
       : language === 'marathi'
-      ? 'हो,नाही,ठीक आहे,धन्यवाद,निरोप,आणखी,booking,price'
-      : 'yes,no,okay,thank you,goodbye,more,booking,price,information';
+      ? 'हो,नाही,ठीक आहे,धन्यवाद,निरोप,आणखी,message,संदेश,record'
+      : 'yes,no,okay,thank you,goodbye,more,message,record,voicemail,leave a message';
 
     xml = twiml(
       gather({

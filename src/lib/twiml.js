@@ -178,9 +178,9 @@ export function record(opts = {}) {
 
 const GREETINGS = {
   intro: {
-    english: 'Hello! My name is Sakshi and I am the AI assistant for GJ SpaCes. Please say your preferred language — English, Hindi, or Marathi.',
-    hindi:   'नमस्ते! मेरा नाम सक्षी है, मैं GJ SpaCes की AI सहायक हूं। कृपया अपनी भाषा बताएं — हिंदी, अंग्रेजी, या मराठी।',
-    marathi: 'नमस्कार! माझे नाव सक्षी आहे, मी GJ SpaCes ची AI सहाय्यक आहे. कृपया आपली भाषा सांगा — मराठी, हिंदी, किंवा इंग्रजी.',
+    english: 'Hello! My name is Sakshi from GJ SpaCes. Please say your preferred language — English, Hindi, or Marathi.',
+    hindi:   'नमस्ते! मेरा नाम सक्षी है, GJ SpaCes से। कृपया अपनी भाषा बताएं — हिंदी, अंग्रेजी, या मराठी।',
+    marathi: 'नमस्कार! माझे नाव सक्षी, GJ SpaCes मधून. कृपया आपली भाषा सांगा — मराठी, हिंदी, किंवा इंग्रजी.',
   },
   nameAsk: {
     english: 'May I please know your good name?',
@@ -188,9 +188,9 @@ const GREETINGS = {
     marathi: 'मी आपले शुभ नाव जाणून घेऊ शकते का?',
   },
   nameGreet: {
-    english: (name) => `Wonderful to connect with you, ${name}! How can I help you today? You can ask about plots, flats, property, or anything about GJ SpaCes.`,
-    hindi:   (name) => `आपसे मिलकर बहुत खुशी हुई, ${name} जी! बताइए, मैं आपकी किस तरह मदद कर सकती हूं? प्लॉट, फ्लैट, प्रॉपर्टी — कुछ भी पूछिए।`,
-    marathi: (name) => `आपल्याशी बोलून खूप आनंद झाला, ${name} जी! सांगा, मी आपली कशी मदत करू शकते? प्लॉट, फ्लॅट, प्रॉपर्टी — काहीही विचारा.`,
+    english: (name) => `Nice to talk to you, ${name}! How can I help you today?`,
+    hindi:   (name) => `${name} जी, आपसे बात करके अच्छा लगा! बताइए, मैं आपकी कैसे मदद कर सकती हूं?`,
+    marathi: (name) => `${name} जी, आपल्याशी बोलून बरं वाटलं! सांगा, मी आपली कशी मदत करू शकते?`,
   },
   farewell: {
     english: 'Thank you for calling GJ SpaCes! Have a wonderful day. Goodbye!',

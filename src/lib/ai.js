@@ -9,8 +9,8 @@ const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 
 // ── Groq Config (Primary — FREE, ~200ms response) ────────────────────────────
 const GROQ_BASE_URL = 'https://api.groq.com/openai/v1';
-const GROQ_PRIMARY_MODEL = 'llama-3.3-70b-versatile';   // Best reasoning + multilingual
-const GROQ_FALLBACK_MODEL = 'llama-3.1-8b-instant';     // Ultra-fast if 70b rate-limited
+const GROQ_PRIMARY_MODEL = 'llama-3.1-8b-instant';       // Ultra-fast (~200ms) for phone calls
+const GROQ_FALLBACK_MODEL = 'llama-3.3-70b-versatile';   // Better reasoning, used if 8b fails
 
 // ── OpenRouter Config (Silent Fallback — backup when Groq limit hit) ──────────
 const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
@@ -22,12 +22,12 @@ let activeProvider = 'groq'; // starts with groq
 
 function buildLangInstruction(language) {
   if (language === 'hindi') {
-    return '\n\nIMPORTANT: Respond ONLY in Hindi (Devanagari script). Keep response to 1-2 short sentences. This is a phone call — be concise.';
+    return '\n\n## LANGUAGE RULE — CRITICAL, DO NOT VIOLATE\nYou MUST respond ONLY in Hindi using Devanagari script (हिंदी).\nEven if the user speaks in English or sends unclear/garbled text, you MUST still reply in Hindi.\nNEVER switch to English. NEVER mix languages. ALWAYS Hindi.\nKeep your reply to 1-2 short sentences. This is a phone call.';
   }
   if (language === 'marathi') {
-    return '\n\nIMPORTANT: Respond ONLY in Marathi (Devanagari script). Keep response to 1-2 short sentences. This is a phone call — be concise.';
+    return '\n\n## LANGUAGE RULE — CRITICAL, DO NOT VIOLATE\nYou MUST respond ONLY in Marathi using Devanagari script (मराठी).\nEven if the user speaks in English or sends unclear/garbled text, you MUST still reply in Marathi.\nNEVER switch to English or Hindi. NEVER mix languages. ALWAYS Marathi.\nKeep your reply to 1-2 short sentences. This is a phone call.';
   }
-  return '\n\nRespond in clear, natural Indian English. Keep response to 1-2 short sentences. This is a phone call — be concise.';
+  return '\n\nRespond in clear, natural Indian English. Keep your reply to 1-2 short sentences. This is a phone call.';
 }
 
 async function callGroq(messages, language, model = GROQ_PRIMARY_MODEL) {
@@ -35,22 +35,28 @@ async function callGroq(messages, language, model = GROQ_PRIMARY_MODEL) {
 
   const systemPrompt = SAKSHI_SYSTEM_PROMPT + buildLangInstruction(language);
 
-  const response = await fetch(`${GROQ_BASE_URL}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${GROQ_API_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        ...messages,
-      ],
-      max_tokens: 120,
-      temperature: 0.65,
-    }),
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000); // 5s max
+
+  try {
+    const response = await fetch(`${GROQ_BASE_URL}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${GROQ_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          ...messages,
+        ],
+        max_tokens: 80,
+        temperature: 0.5,
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
 
   if (!response.ok) {
     const errText = await response.text();
@@ -72,6 +78,10 @@ async function callGroq(messages, language, model = GROQ_PRIMARY_MODEL) {
   const content = data.choices?.[0]?.message?.content;
   if (!content) throw new Error('Empty response from Groq');
   return content.trim();
+  } catch (err) {
+    clearTimeout(timeout);
+    throw err;
+  }
 }
 
 async function callOpenRouter(messages, language, model = OPENROUTER_PRIMARY_MODEL) {
@@ -79,24 +89,30 @@ async function callOpenRouter(messages, language, model = OPENROUTER_PRIMARY_MOD
 
   const systemPrompt = SAKSHI_SYSTEM_PROMPT + buildLangInstruction(language);
 
-  const response = await fetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
-      'X-Title': 'GJ SpaCes CallBot CRM',
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: 'system', content: systemPrompt },
-        ...messages,
-      ],
-      max_tokens: 120,
-      temperature: 0.65,
-    }),
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000); // 8s max
+
+  try {
+    const response = await fetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
+        'X-Title': 'GJ SpaCes CallBot CRM',
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          ...messages,
+        ],
+        max_tokens: 80,
+        temperature: 0.5,
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
 
   if (!response.ok) {
     const errText = await response.text();
@@ -111,6 +127,10 @@ async function callOpenRouter(messages, language, model = OPENROUTER_PRIMARY_MOD
   const content = data.choices?.[0]?.message?.content;
   if (!content) throw new Error('Empty response from OpenRouter');
   return content.trim();
+  } catch (err) {
+    clearTimeout(timeout);
+    throw err;
+  }
 }
 
 /**

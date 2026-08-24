@@ -3,8 +3,8 @@ import { NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 import { CallSession } from '@/lib/models/CallSession';
 import {
-  twiml, gather, redirect, webhookUrl,
-  detectLanguageFromSpeech, getGreeting
+  twiml, gather, say, record, redirect, webhookUrl,
+  detectLanguageFromSpeech, detectModeFromSpeech, getGreeting
 } from '@/lib/twiml';
 
 async function handleLanguage(request) {
@@ -51,6 +51,29 @@ async function handleLanguage(request) {
     }
 
     const { language, speechLang } = detectLanguageFromSpeech(speechResult);
+
+    // If user says 'leave a message' or 'record' during intro, go straight to voicemail
+    if (detectModeFromSpeech(speechResult) === 'voicemail') {
+      if (session) {
+        session.language = language;
+        session.speechLang = speechLang;
+        session.mode = 'voicemail';
+        await session.save();
+      }
+
+      const vmPrompt = getGreeting('voicemailReady', language);
+      xml = twiml(
+        say(vmPrompt, language) +
+        record({
+          action: webhookUrl('/api/twilio/voicemail'),
+          maxLength: 120,
+          playBeep: true,
+          transcribe: true,
+          transcribeCallback: webhookUrl('/api/twilio/voicemail-transcript'),
+        })
+      );
+      return new NextResponse(xml, { status: 200, headers: { 'Content-Type': 'text/xml; charset=utf-8' } });
+    }
 
     if (session) {
       session.language = language;

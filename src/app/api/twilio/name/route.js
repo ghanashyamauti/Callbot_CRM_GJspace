@@ -66,10 +66,10 @@ async function handleName(request) {
     }
 
     const chatHints = language === 'hindi'
-      ? 'जानकारी,बुकिंग,मूल्य,price,booking,information,शिकायत,धन्यवाद'
+      ? 'जानकारी,प्लॉट,फ्लैट,प्रॉपर्टी,message,संदेश,record,धन्यवाद'
       : language === 'marathi'
-      ? 'माहिती,बुकिंग,किंमत,price,booking,information,तक्रार,धन्यवाद'
-      : 'information,price,booking,coworking,interior design,complaint,thank you,bye';
+      ? 'माहिती,प्लॉट,फ्लॅट,प्रॉपर्टी,message,संदेश,record,धन्यवाद'
+      : 'information,plot,flat,property,message,record,voicemail,thank you,bye';
 
     xml = twiml(
       gather({
