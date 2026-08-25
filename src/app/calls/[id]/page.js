@@ -192,25 +192,57 @@ export default function CallDetailPage({ params }) {
     const lang = call?.language || 'english';
     const msg = call.transcript[index];
 
-    // Stop anything currently playing
-    stopAllAudio();
+    // Stop any existing audio directly (avoid full stopAllAudio race)
+    if (activeAudioRef.current) {
+      activeAudioRef.current.pause();
+      activeAudioRef.current.src = '';
+      activeAudioRef.current = null;
+    }
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    clearInterval(progressTimerRef.current);
     isCancelledRef.current = false;
 
     setActiveBubbleIndex(index);
     setIsPlaying(true);
 
-    const ttsUrl = `/api/tts?language=${lang}&text=${encodeURIComponent(msg.text)}`;
-    const audio = new Audio(ttsUrl);
-    activeAudioRef.current = audio;
+    // Use POST to avoid URL length limits on long transcript text
+    fetch('/api/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: msg.text, language: lang }),
+    })
+      .then(res => {
+        if (!res.ok) throw new Error('TTS failed');
+        return res.blob();
+      })
+      .then(blob => {
+        if (isCancelledRef.current) return;
+        const audioUrl = URL.createObjectURL(blob);
+        const audio = new Audio(audioUrl);
+        activeAudioRef.current = audio;
 
-    const onDone = () => {
-      setIsPlaying(false);
-      setActiveBubbleIndex(-1);
-    };
+        audio.onended = () => {
+          setIsPlaying(false);
+          setActiveBubbleIndex(-1);
+          URL.revokeObjectURL(audioUrl);
+        };
+        audio.onerror = () => {
+          setIsPlaying(false);
+          setActiveBubbleIndex(-1);
+          URL.revokeObjectURL(audioUrl);
+        };
 
-    audio.onended = onDone;
-    audio.onerror = onDone;
-    audio.play().catch(onDone);
+        audio.play().catch(() => {
+          setIsPlaying(false);
+          setActiveBubbleIndex(-1);
+        });
+      })
+      .catch(() => {
+        setIsPlaying(false);
+        setActiveBubbleIndex(-1);
+      });
   }
 
   function togglePlay() {
