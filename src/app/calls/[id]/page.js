@@ -94,8 +94,8 @@ export default function CallDetailPage({ params }) {
     setActiveBubbleIndex(-1);
   }
 
-  // Play Neural Voice dialogue sequence
-  function playNeuralTranscriptSequence(transcript, lang) {
+  // Play Neural Voice dialogue sequence from any starting index
+  function playNeuralTranscriptSequence(transcript, lang, startIndex = 0) {
     if (!transcript || transcript.length === 0) {
       setIsPlaying(false);
       return;
@@ -103,16 +103,26 @@ export default function CallDetailPage({ params }) {
 
     isCancelledRef.current = false;
     setIsPlaying(true);
-    let index = 0;
-    const startTime = Date.now();
+    let index = startIndex;
+    const totalLines = transcript.length;
+    const totalDuration = duration || call?.duration || (totalLines * 4) || 60;
+
+    const initialTime = (startIndex / totalLines) * totalDuration;
+    setCurrentTime(initialTime);
+    setActiveBubbleIndex(startIndex);
+
+    let turnStartTime = Date.now();
+    let turnBaseTime = initialTime;
 
     // Progress timer
     clearInterval(progressTimerRef.current);
     progressTimerRef.current = setInterval(() => {
       if (isCancelledRef.current) return;
-      const elapsed = (Date.now() - startTime) / 1000;
-      setCurrentTime(Math.min(elapsed, duration || 60));
-    }, 200);
+      const turnElapsed = (Date.now() - turnStartTime) / 1000;
+      const nextTurnBase = ((index + 1) / totalLines) * totalDuration;
+      const currentTurnTime = Math.min(turnBaseTime + turnElapsed, nextTurnBase);
+      setCurrentTime(Math.min(currentTurnTime, totalDuration));
+    }, 100);
 
     function playNextTurn() {
       if (isCancelledRef.current) {
@@ -122,14 +132,18 @@ export default function CallDetailPage({ params }) {
 
       if (index >= transcript.length) {
         stopAllAudio();
-        setCurrentTime(duration || 60);
+        setCurrentTime(totalDuration);
         setActiveBubbleIndex(-1);
         return;
       }
 
       setActiveBubbleIndex(index);
+      turnStartTime = Date.now();
+      turnBaseTime = (index / totalLines) * totalDuration;
+      setCurrentTime(turnBaseTime);
+
       const msg = transcript[index];
-      const ttsUrl = `/api/tts?language=${lang}&text=${encodeURIComponent(msg.text)}`;
+      const ttsUrl = `/api/tts?language=${lang}&text=${encodeURIComponent(msg.text.substring(0, 500))}`;
       const audio = new Audio(ttsUrl);
       activeAudioRef.current = audio;
 
@@ -142,8 +156,7 @@ export default function CallDetailPage({ params }) {
 
       audio.onerror = () => {
         if (isCancelledRef.current) return;
-        // Fallback to browser Web Speech API
-        if ('speechSynthesis' in window) {
+        if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
           const utter = new SpeechSynthesisUtterance(msg.text);
           if (lang === 'hindi') utter.lang = 'hi-IN';
           else if (lang === 'marathi') utter.lang = 'mr-IN';
@@ -154,7 +167,12 @@ export default function CallDetailPage({ params }) {
               playNextTurn();
             }
           };
-          utter.onerror = () => stopAllAudio();
+          utter.onerror = () => {
+            if (!isCancelledRef.current) {
+              index++;
+              playNextTurn();
+            }
+          };
           window.speechSynthesis.speak(utter);
         } else {
           index++;
@@ -164,7 +182,7 @@ export default function CallDetailPage({ params }) {
 
       audio.play().catch(() => {
         if (isCancelledRef.current) return;
-        if ('speechSynthesis' in window) {
+        if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
           const utter = new SpeechSynthesisUtterance(msg.text);
           if (lang === 'hindi') utter.lang = 'hi-IN';
           else if (lang === 'marathi') utter.lang = 'mr-IN';
@@ -175,10 +193,16 @@ export default function CallDetailPage({ params }) {
               playNextTurn();
             }
           };
-          utter.onerror = () => stopAllAudio();
+          utter.onerror = () => {
+            if (!isCancelledRef.current) {
+              index++;
+              playNextTurn();
+            }
+          };
           window.speechSynthesis.speak(utter);
         } else {
-          stopAllAudio();
+          index++;
+          playNextTurn();
         }
       });
     }
@@ -186,125 +210,139 @@ export default function CallDetailPage({ params }) {
     playNextTurn();
   }
 
-  // Play a SINGLE transcript line when user clicks on it
-  function playTranscriptLine(index) {
-    if (!call?.transcript?.[index]) return;
-    const lang = call?.language || 'english';
-    const msg = call.transcript[index];
-
-    // Stop any existing audio directly (avoid full stopAllAudio race)
-    if (activeAudioRef.current) {
-      activeAudioRef.current.pause();
-      activeAudioRef.current.src = '';
-      activeAudioRef.current = null;
-    }
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-    }
-    clearInterval(progressTimerRef.current);
+  function startRecordingPlayback(seekTime = 0) {
+    stopAllAudio();
     isCancelledRef.current = false;
-
-    setActiveBubbleIndex(index);
     setIsPlaying(true);
 
-    // Use POST to avoid URL length limits on long transcript text
-    fetch('/api/tts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: msg.text, language: lang }),
-    })
-      .then(res => {
-        if (!res.ok) throw new Error('TTS failed');
-        return res.blob();
-      })
-      .then(blob => {
-        if (isCancelledRef.current) return;
-        const audioUrl = URL.createObjectURL(blob);
-        const audio = new Audio(audioUrl);
-        activeAudioRef.current = audio;
+    let audioSrc = call.recordingUrl;
+    if (audioSrc.includes('twilio.com') || audioSrc.includes('api.twilio.com')) {
+      audioSrc = `/api/recording?url=${encodeURIComponent(audioSrc)}`;
+    }
 
-        audio.onended = () => {
-          setIsPlaying(false);
-          setActiveBubbleIndex(-1);
-          URL.revokeObjectURL(audioUrl);
-        };
-        audio.onerror = () => {
-          setIsPlaying(false);
-          setActiveBubbleIndex(-1);
-          URL.revokeObjectURL(audioUrl);
-        };
+    const audio = new Audio(audioSrc);
+    activeAudioRef.current = audio;
+    const totalLines = call?.transcript?.length || 1;
+    const totalDuration = duration || call?.duration || 60;
 
-        audio.play().catch(() => {
-          setIsPlaying(false);
-          setActiveBubbleIndex(-1);
-        });
-      })
-      .catch(() => {
-        setIsPlaying(false);
-        setActiveBubbleIndex(-1);
-      });
+    audio.ontimeupdate = () => {
+      if (!isCancelledRef.current) {
+        setCurrentTime(audio.currentTime);
+        const lineIdx = Math.min(
+          Math.floor((audio.currentTime / (audio.duration || totalDuration)) * totalLines),
+          totalLines - 1
+        );
+        setActiveBubbleIndex(lineIdx);
+      }
+    };
+    audio.onloadedmetadata = () => {
+      if (audio.duration && isFinite(audio.duration)) {
+        setDuration(audio.duration);
+        if (seekTime > 0) {
+          audio.currentTime = Math.min(seekTime, audio.duration);
+          setCurrentTime(audio.currentTime);
+        }
+      }
+    };
+    if (seekTime > 0) {
+      audio.currentTime = seekTime;
+      setCurrentTime(seekTime);
+    }
+    audio.onended = () => stopAllAudio();
+    audio.onerror = () => {
+      if (!isCancelledRef.current) {
+        const lang = call?.language || 'english';
+        const transcript = call?.transcript || [];
+        const targetIndex = Math.min(Math.floor((seekTime / totalDuration) * totalLines), totalLines - 1);
+        playNeuralTranscriptSequence(transcript, lang, targetIndex);
+      }
+    };
+    audio.play().catch(() => {
+      if (!isCancelledRef.current) {
+        const lang = call?.language || 'english';
+        const transcript = call?.transcript || [];
+        const targetIndex = Math.min(Math.floor((seekTime / totalDuration) * totalLines), totalLines - 1);
+        playNeuralTranscriptSequence(transcript, lang, targetIndex);
+      }
+    });
+  }
+
+  // Click on transcript line → play from that line onwards
+  function playTranscriptLine(clickedIndex) {
+    if (!call?.transcript?.[clickedIndex]) return;
+    const lang = call?.language || 'english';
+    const transcript = call.transcript;
+    const totalLines = transcript.length;
+    const totalDuration = duration || call.duration || 60;
+    const seekTime = (clickedIndex / totalLines) * totalDuration;
+
+    if (call?.recordingUrl) {
+      if (activeAudioRef.current && isPlaying) {
+        activeAudioRef.current.currentTime = seekTime;
+        setCurrentTime(seekTime);
+        setActiveBubbleIndex(clickedIndex);
+      } else {
+        startRecordingPlayback(seekTime);
+      }
+      return;
+    }
+
+    // TTS Dialogue mode:
+    stopAllAudio();
+    setTimeout(() => {
+      playNeuralTranscriptSequence(transcript, lang, clickedIndex);
+    }, 50);
+  }
+
+  function handleSeek(percent) {
+    const totalDuration = duration || call?.duration || 60;
+    const newTime = (percent / 100) * totalDuration;
+    setCurrentTime(newTime);
+
+    const lang = call?.language || 'english';
+    const transcript = call?.transcript || [];
+    const totalLines = transcript.length || 1;
+
+    // Case 1: Call has a recording file
+    if (call?.recordingUrl) {
+      if (activeAudioRef.current && isPlaying) {
+        activeAudioRef.current.currentTime = newTime;
+      } else {
+        startRecordingPlayback(newTime);
+      }
+      return;
+    }
+
+    // Case 2: TTS dialogue mode
+    const targetIndex = Math.min(Math.floor((percent / 100) * totalLines), totalLines - 1);
+    stopAllAudio();
+    setTimeout(() => {
+      playNeuralTranscriptSequence(transcript, lang, targetIndex);
+    }, 50);
   }
 
   function togglePlay() {
     if (isPlaying) {
       stopAllAudio();
     } else {
-      isCancelledRef.current = false;
       const lang = call?.language || 'english';
       const transcript = call?.transcript || [
         { role: 'bot', text: call?.summary || 'Thank you for calling GJ SpaCes.' }
       ];
 
-      // If call has recording URL (Twilio or simulator), play actual audio!
       if (call?.recordingUrl) {
-        // Twilio recording URLs need auth — proxy through our API
-        let audioSrc = call.recordingUrl;
-        if (audioSrc.includes('twilio.com') || audioSrc.includes('api.twilio.com')) {
-          audioSrc = `/api/recording?url=${encodeURIComponent(audioSrc)}`;
-        }
-        
-        const audio = new Audio(audioSrc);
-        activeAudioRef.current = audio;
-        setIsPlaying(true);
-
-        audio.ontimeupdate = () => {
-          if (!isCancelledRef.current) {
-            setCurrentTime(audio.currentTime);
-          }
-        };
-        audio.onloadedmetadata = () => {
-          if (audio.duration && isFinite(audio.duration)) {
-            setDuration(audio.duration);
-          }
-        };
-        audio.onended = () => {
-          stopAllAudio();
-        };
-        audio.onerror = () => {
-          // If recording can't be played, fallback to Neural transcript narration
-          if (!isCancelledRef.current) {
-            playNeuralTranscriptSequence(transcript, lang);
-          }
-        };
-
-        audio.play().catch(() => {
-          if (!isCancelledRef.current) {
-            playNeuralTranscriptSequence(transcript, lang);
-          }
-        });
-
+        startRecordingPlayback(currentTime > 0 ? currentTime : 0);
       } else {
-        // Play Neural Voice dialogue narration
-        playNeuralTranscriptSequence(transcript, lang);
+        const totalLines = transcript.length || 1;
+        const totalDuration = duration || call?.duration || 60;
+        const targetIndex = currentTime > 0
+          ? Math.min(Math.floor((currentTime / totalDuration) * totalLines), totalLines - 1)
+          : 0;
+        stopAllAudio();
+        setTimeout(() => {
+          playNeuralTranscriptSequence(transcript, lang, targetIndex);
+        }, 50);
       }
-    }
-  }
-
-  function handleSeek(percent) {
-    const newTime = (percent / 100) * (duration || 60);
-    setCurrentTime(newTime);
-    if (activeAudioRef.current) {
-      activeAudioRef.current.currentTime = newTime;
     }
   }
 
@@ -441,11 +479,20 @@ export default function CallDetailPage({ params }) {
               {call.recordingUrl ? '🎙️ Real Microphone Audio Recording' : '🔊 Voice Dialogue Playback'}
             </span>
             <span style={{ fontSize: '12px', color: isPlaying ? 'var(--success)' : 'var(--accent-primary)', fontWeight: 600 }}>
-              {isPlaying ? '▶ Playing Audio...' : 'Click Play to Listen'}
+              {isPlaying ? '▶ Playing Audio...' : 'Click Waveform or Play to Listen'}
             </span>
           </div>
 
-          <div className="audio-waveform">
+          <div
+            className="audio-waveform"
+            style={{ cursor: 'pointer' }}
+            title="Click anywhere to jump and play from here"
+            onClick={(e) => {
+              const rect = e.currentTarget.getBoundingClientRect();
+              const percent = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
+              handleSeek(percent);
+            }}
+          >
             {(call.waveformData && call.waveformData.length > 0 ? call.waveformData : Array.from({ length: 45 }, () => Math.random() * 0.7 + 0.3)).map((h, i) => {
               const isActive = (i / 45) * 100 <= playProgress;
               return (
@@ -453,7 +500,6 @@ export default function CallDetailPage({ params }) {
                   key={i}
                   className={`audio-waveform-bar ${isActive ? 'active' : ''}`}
                   style={{ height: `${Math.max(h * 100, 15)}%` }}
-                  onClick={() => handleSeek((i / 45) * 100)}
                 />
               );
             })}
@@ -472,9 +518,12 @@ export default function CallDetailPage({ params }) {
             </span>
             <div
               className="audio-progress"
+              style={{ cursor: 'pointer' }}
+              title="Click anywhere to seek"
               onClick={(e) => {
                 const rect = e.currentTarget.getBoundingClientRect();
-                handleSeek(((e.clientX - rect.left) / rect.width) * 100);
+                const percent = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
+                handleSeek(percent);
               }}
             >
               <div className="audio-progress-fill" style={{ width: `${playProgress}%` }} />
