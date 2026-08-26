@@ -1,15 +1,15 @@
 // Entry point for Twilio calls (supports GET and POST)
-// Automatically initiates full-call dual audio recording and creates live MongoDB session.
+// Automatically initiates full-call dual audio recording and creates live MongoDB session and CRM call record.
 import { NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 import { CallSession } from '@/lib/models/CallSession';
 import { twiml, gather, redirect, webhookUrl, getGreeting } from '@/lib/twiml';
+import { syncTwilioCallToCRM } from '@/lib/crm-sync';
 
 const TWILIO_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH = process.env.TWILIO_AUTH_TOKEN;
 
 // Start full-call dual-channel recording via Twilio REST API
-// Records BOTH user's real voice + Sakshi's voice on separate channels
 async function startCallRecording(callSid) {
   if (!callSid || !TWILIO_SID || !TWILIO_AUTH) return;
   try {
@@ -23,7 +23,6 @@ async function startCallRecording(callSid) {
           'Content-Type': 'application/x-www-form-urlencoded',
         },
         body: new URLSearchParams({
-          // Mono (default) = both user's real voice + Sakshi's voice MIXED into one track
           RecordingStatusCallback: webhookUrl('/api/twilio/recording-status'),
           RecordingStatusCallbackEvent: 'completed',
         }).toString(),
@@ -35,7 +34,6 @@ async function startCallRecording(callSid) {
     console.warn('[twilio/voice] Recording start warning:', err.message);
   }
 }
-
 
 async function handleVoiceRequest(request) {
   let callSid = '';
@@ -61,33 +59,49 @@ async function handleVoiceRequest(request) {
     callSid = `LIVE-${Date.now()}`;
   }
 
-  // Start background whole-call recording
-  if (callSid && !callSid.startsWith('LIVE-')) {
-    startCallRecording(callSid).catch(() => {});
-  }
+  const greetingText = getGreeting('intro', 'english');
 
-  // Safely record session in MongoDB
-  connectDB().then(() => {
-    return CallSession.findOneAndUpdate(
+  try {
+    await connectDB();
+
+    // 1. Start background whole-call recording
+    if (callSid && !callSid.startsWith('LIVE-')) {
+      await startCallRecording(callSid);
+    }
+
+    // 2. Create or update CallSession in MongoDB
+    const session = await CallSession.findOneAndUpdate(
       { callSid },
       {
-        callSid,
-        from,
-        to,
-        language: 'english',
-        speechLang: 'en-IN',
-        honorific: '',
-        mode: '',
-        transcript: [],
-        aiMessages: [],
-        startTime: new Date(),
-        status: 'active',
+        $set: {
+          callSid,
+          from,
+          to,
+          language: 'english',
+          speechLang: 'en-IN',
+          honorific: '',
+          mode: '',
+          transcript: [{ role: 'bot', text: greetingText }],
+          aiMessages: [],
+          startTime: new Date(),
+          status: 'active',
+        }
       },
       { upsert: true, returnDocument: 'after' }
     );
-  }).catch((err) => {
-    console.warn('[twilio/voice] Session create warning:', err.message);
-  });
+
+    // 3. Save initial call record in MongoDB CRM immediately
+    await syncTwilioCallToCRM(callSid, {
+      session,
+      from,
+      to,
+      status: 'in-progress',
+      transcript: [{ role: 'bot', text: greetingText }],
+    });
+
+  } catch (err) {
+    console.warn('[twilio/voice] DB sync warning:', err.message);
+  }
 
   // TwiML: Prompt caller with Sakshi's greeting and listen for speech
   const xml = twiml(
@@ -95,7 +109,7 @@ async function handleVoiceRequest(request) {
       action: webhookUrl('/api/twilio/language'),
       language: 'english',
       hints: 'English,Hindi,Marathi,हिंदी,मराठी,अंग्रेज़ी',
-      prompt: getGreeting('intro', 'english'),
+      prompt: greetingText,
       speechTimeout: 'auto',
       maxSpeechTime: 10,
     }) +

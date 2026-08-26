@@ -5,26 +5,33 @@
 import { NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 import { CallSession } from '@/lib/models/CallSession';
-import { addCall } from '@/lib/store';
 import { generateCallSummary } from '@/lib/ai';
-import { v4 as uuidv4 } from 'uuid';
-
-function generateWaveform(len = 60) {
-  return Array.from({ length: len }, () => Math.random() * 0.8 + 0.2);
-}
-
-function generateCallId(callSid) {
-  return 'CALL-' + callSid.substring(0, 8).toUpperCase();
-}
+import { syncTwilioCallToCRM } from '@/lib/crm-sync';
 
 export async function POST(request) {
-  const formData      = await request.formData();
-  const callSid       = formData.get('CallSid')       || '';
-  const callStatus    = formData.get('CallStatus')     || '';
-  const callDuration  = parseInt(formData.get('CallDuration') || '0');
-  const from          = formData.get('From')           || '';
-  const to            = formData.get('To')             || '';
-  const direction     = formData.get('Direction')      || 'inbound';
+  let callSid = '';
+  let callStatus = '';
+  let callDuration = 0;
+  let from = '';
+  let to = '';
+  let direction = 'inbound';
+
+  try {
+    const formData = await request.formData();
+    callSid       = formData.get('CallSid')       || '';
+    callStatus    = formData.get('CallStatus')     || '';
+    callDuration  = parseInt(formData.get('CallDuration') || '0');
+    from          = formData.get('From')           || '';
+    to            = formData.get('To')             || '';
+    direction     = formData.get('Direction')      || 'inbound';
+  } catch (e) {
+    const { searchParams } = new URL(request.url);
+    callSid       = searchParams.get('CallSid')       || '';
+    callStatus    = searchParams.get('CallStatus')     || '';
+    callDuration  = parseInt(searchParams.get('CallDuration') || '0');
+    from          = searchParams.get('From')           || '';
+    to            = searchParams.get('To')             || '';
+  }
 
   // Only process on call end
   const terminalStatuses = ['completed', 'failed', 'busy', 'no-answer', 'canceled'];
@@ -36,18 +43,10 @@ export async function POST(request) {
     await connectDB();
     const session = await CallSession.findOne({ callSid });
 
-    if (!session || session.status === 'ended') {
-      return new NextResponse('OK', { status: 200 });
-    }
+    const language    = session?.language || 'english';
+    const transcript  = session?.transcript || [];
+    const mode        = session?.mode || 'talk';
 
-    session.status = 'ended';
-    await session.save();
-
-    const language    = session.language || 'english';
-    const transcript  = session.transcript || [];
-    const mode        = session.mode || 'talk';
-
-    // Determine status and resolution
     let status     = 'completed';
     let resolution = 'pending';
 
@@ -59,7 +58,6 @@ export async function POST(request) {
       resolution = 'pending';
     }
 
-    // Generate AI summary from transcript (if any conversation happened)
     let summary       = 'Customer called GJ SpaCes.';
     let queryCategory = 'inquiry';
     let sentiment     = 'neutral';
@@ -73,73 +71,43 @@ export async function POST(request) {
         sentiment     = summaryResult.sentiment     || sentiment;
         aiResolution  = summaryResult.resolution    || aiResolution;
       } catch (aiErr) {
-        console.warn('[twilio/status] AI summary failed:', aiErr.message);
+        console.warn('[twilio/status] AI summary warning:', aiErr.message);
       }
     }
 
     if (mode === 'voicemail') {
-      summary       = session.recordingTranscript
+      summary       = session?.recordingTranscript
         ? `Voicemail: "${session.recordingTranscript.substring(0, 150)}"`
         : 'Customer left a voicemail message.';
       queryCategory = 'inquiry';
       aiResolution  = 'pending';
     }
 
-    // Format timestamps
-    const endTime   = new Date();
-    const startTime = session.startTime || new Date(endTime.getTime() - callDuration * 1000);
-
-    // Build the full call record
-    const callData = {
-      id:               uuidv4(),
-      callId:           generateCallId(callSid),
-      customerName:     session.customerName || formatPhoneAsName(from),
-      customerPhone:    from,
-      customerEmail:    '',
-      customerLocation: 'Pune',
-      direction:        direction === 'outbound-api' ? 'outbound' : 'inbound',
+    // Save final call record to MongoDB CRM
+    await syncTwilioCallToCRM(callSid, {
+      session,
+      from,
+      to,
+      direction: direction === 'outbound-api' ? 'outbound' : 'inbound',
+      duration: callDuration,
       status,
-      duration:         callDuration,
-      startTime:        startTime.toISOString(),
-      endTime:          endTime.toISOString(),
-      transcript:       transcript.map((m, i) => ({
-        ...m,
-        timestamp: Math.round((i + 1) * callDuration / Math.max(transcript.length, 1)),
-      })),
-      voicemail:        session.recordingTranscript || null,
-      recordingUrl:     session.recordingUrl || null,
       summary,
       queryCategory,
-      queryType:        queryCategory,
       sentiment,
-      resolution:       aiResolution,
-      language,
-      waveformData:     generateWaveform(),
-      createdAt:        startTime.toISOString(),
-    };
+      resolution: aiResolution,
+      isEnded: true,
+    });
 
-    await addCall(callData);
+    if (session) {
+      session.status = 'ended';
+      await session.save();
+    }
 
-    // Clean up session after saving call
-    await CallSession.deleteOne({ callSid });
-
-    console.log(`[twilio/status] Saved call ${callData.callId} (${callStatus}, ${callDuration}s)`);
+    console.log(`[twilio/status] ✓ Finalized call ${callSid} (${callStatus}, ${callDuration}s)`);
     return new NextResponse('OK', { status: 200 });
 
   } catch (error) {
     console.error('[twilio/status] Error:', error);
     return new NextResponse('Error', { status: 500 });
   }
-}
-
-// Format phone number as a readable display name until we have the real name
-function formatPhoneAsName(phone) {
-  if (!phone) return 'Unknown Caller';
-  // Remove country code and format nicely
-  const digits = phone.replace(/\D/g, '');
-  if (digits.length >= 10) {
-    const last10 = digits.slice(-10);
-    return `Caller ${last10.slice(0, 5)}xxxxx`;
-  }
-  return 'Unknown Caller';
 }

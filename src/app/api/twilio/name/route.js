@@ -2,11 +2,11 @@
 import { NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 import { CallSession } from '@/lib/models/CallSession';
-import { Customer } from '@/lib/models/Customer';
 import {
   twiml, gather, redirect, webhookUrl,
   extractNameFromSpeech, getGreeting
 } from '@/lib/twiml';
+import { syncTwilioCallToCRM } from '@/lib/crm-sync';
 
 async function handleName(request) {
   let callSid = '';
@@ -38,31 +38,20 @@ async function handleName(request) {
 
     if (session) {
       session.customerName = customerName;
-      session.mode = 'talk'; // default to talk (skip mode selection step)
+      session.mode = 'talk';
       session.transcript.push({ role: 'customer', text: speechResult || customerName });
       await session.save();
-
-      // Upsert customer in MongoDB CRM
-      if (session.from && customerName && customerName !== 'Sir' && customerName !== 'Caller') {
-        Customer.findOneAndUpdate(
-          { phone: session.from },
-          {
-            $set: { name: customerName, lastCallDate: new Date() },
-            $inc: { totalCalls: 1 },
-            $setOnInsert: { createdAt: new Date(), email: '', location: 'Pune', tags: ['lead'] },
-          },
-          { upsert: true, returnDocument: 'after' }
-        ).catch(() => {});
-      }
     }
 
-    // Greet by name and go straight to AI chat — no mode selection
+    // Greet by name and go straight to AI chat
     const greetPrompt = getGreeting('nameGreet', language, customerName);
 
     if (session) {
       session.transcript.push({ role: 'bot', text: greetPrompt });
       session.aiMessages.push({ role: 'assistant', content: greetPrompt });
       await session.save();
+      // Sync immediately to CRM
+      await syncTwilioCallToCRM(callSid, { session, customerName, status: 'in-progress' });
     }
 
     const chatHints = language === 'hindi'

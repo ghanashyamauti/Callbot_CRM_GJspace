@@ -6,6 +6,7 @@ import {
   twiml, gather, say, record, redirect, webhookUrl,
   detectLanguageFromSpeech, detectModeFromSpeech, getGreeting
 } from '@/lib/twiml';
+import { syncTwilioCallToCRM } from '@/lib/crm-sync';
 
 async function handleLanguage(request) {
   let callSid = '';
@@ -59,6 +60,7 @@ async function handleLanguage(request) {
         session.speechLang = speechLang;
         session.mode = 'voicemail';
         await session.save();
+        await syncTwilioCallToCRM(callSid, { session, status: 'voicemail' });
       }
 
       const vmPrompt = getGreeting('voicemailReady', language);
@@ -78,9 +80,10 @@ async function handleLanguage(request) {
     if (session) {
       session.language = language;
       session.speechLang = speechLang;
-      session.honorific = 'sir'; // default — skip honorific step
-      session.transcript.push({ role: 'customer', text: `Language: ${language}` });
+      session.honorific = 'sir';
+      session.transcript.push({ role: 'customer', text: `Selected: ${language}` });
       await session.save();
+      await syncTwilioCallToCRM(callSid, { session, status: 'in-progress' });
     }
 
     // Go straight to asking the customer's name (no honorific step)

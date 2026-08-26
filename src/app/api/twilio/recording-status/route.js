@@ -1,11 +1,11 @@
 // POST /api/twilio/recording-status — Called when whole-call recording completes
 // Saves the Twilio recording URL to CallSession and Call record.
-// This is NOT for voicemail — it's for the full dual-channel call recording.
 
 import { NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 import { CallSession } from '@/lib/models/CallSession';
 import { Call } from '@/lib/models/Call';
+import { syncTwilioCallToCRM } from '@/lib/crm-sync';
 
 export async function POST(request) {
   let callSid = '';
@@ -20,8 +20,9 @@ export async function POST(request) {
     recordingSid = formData.get('RecordingSid') || '';
     recordingDuration = parseInt(formData.get('RecordingDuration') || '0');
   } catch (e) {
-    console.warn('[recording-status] Failed to parse form data:', e.message);
-    return new NextResponse('OK', { status: 200 });
+    const { searchParams } = new URL(request.url);
+    callSid = searchParams.get('CallSid') || '';
+    recordingUrl = searchParams.get('RecordingUrl') || '';
   }
 
   if (!callSid || !recordingUrl) {
@@ -36,23 +37,21 @@ export async function POST(request) {
   try {
     await connectDB();
 
-    // Save to active session (if still alive)
+    // Save to active session
     await CallSession.findOneAndUpdate(
       { callSid },
       { $set: { recordingUrl: audioUrl } }
     );
 
-    // Also save directly to Call record (in case status webhook already ran)
-    const callId = 'CALL-' + callSid.substring(0, 8).toUpperCase();
-    await Call.findOneAndUpdate(
-      { callId },
-      { $set: { recordingUrl: audioUrl } }
-    );
+    // Save directly to Call record via sync helper
+    await syncTwilioCallToCRM(callSid, {
+      recordingUrl: audioUrl,
+      duration: recordingDuration || undefined,
+    });
 
   } catch (err) {
     console.warn('[recording-status] DB error:', err.message);
   }
 
-  // Return 200 OK (no TwiML needed — this is a status callback, not a call flow webhook)
   return new NextResponse('OK', { status: 200 });
 }
