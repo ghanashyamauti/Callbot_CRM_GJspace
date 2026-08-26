@@ -117,8 +117,10 @@ export function twiml(innerXml) {
   return `<?xml version="1.0" encoding="UTF-8"?><Response>${innerXml}</Response>`;
 }
 
-// ALWAYS use Google Neural Female voice — never default male robot
+// Streams studio Sarvam AI Indian female voice via <Play> when public URL is available,
+// and falls back to Twilio Google Neural Female voice (<Say>).
 export function say(text, language = 'english') {
+  const base = getBaseUrl();
   const { voice, ttsLang } = getVoiceConfig(language);
   const escaped = text
     .replace(/&/g, '&amp;')
@@ -126,7 +128,14 @@ export function say(text, language = 'english') {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 
-  // Always specify voice — prevents Twilio default male
+  // If deployed publicly (e.g. Vercel), stream Sarvam AI studio audio via <Play>
+  if (base && !base.includes('localhost')) {
+    const audioUrl = webhookUrl('/api/tts', { text, language });
+    const escapedUrl = audioUrl.replace(/&/g, '&amp;');
+    return `<Play>${escapedUrl}</Play>`;
+  }
+
+  // Local / direct fallback
   return `<Say voice="${voice}" language="${ttsLang}">${escaped}</Say>`;
 }
 
