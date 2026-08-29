@@ -1,9 +1,7 @@
-// AI conversation loop — supports POST and GET
-// Automatically synchronizes live call record & transcript to MongoDB CRM on every turn
 import { NextResponse } from 'next/server';
 import { connectDB } from '@/lib/mongodb';
 import { CallSession } from '@/lib/models/CallSession';
-import { askSakshi } from '@/lib/ai';
+import { askSakshi, detectLanguageSwitch } from '@/lib/ai';
 import {
   twiml, say, gather, record, redirect, hangup, webhookUrl,
   detectFarewellFromSpeech, detectModeFromSpeech, getGreeting
@@ -47,7 +45,20 @@ async function handleChat(request) {
   try {
     await connectDB();
     const session = await CallSession.findOne({ callSid });
-    const language = session?.language || 'english';
+    let language = session?.language || 'english';
+
+    // Detect mid-call language switch intent
+    if (speechResult) {
+      const switchRequest = detectLanguageSwitch(speechResult);
+      if (switchRequest && switchRequest.language !== language) {
+        language = switchRequest.language;
+        if (session) {
+          session.language = switchRequest.language;
+          session.speechLang = switchRequest.speechLang;
+          await session.save();
+        }
+      }
+    }
 
     // Low confidence or silence
     if (!speechResult || confidence < 0.2) {

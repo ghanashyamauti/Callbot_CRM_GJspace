@@ -449,13 +449,17 @@ export default function SimulatePage() {
 
       const data = await res.json();
       const botReply = data.reply;
+      const activeLang = data.language || language;
+      if (activeLang !== language) {
+        setLanguage(activeLang);
+      }
 
       setTranscript(prev => [...prev, { role: 'bot', text: botReply }]);
       setAiMessages(prev => [...prev, { role: 'assistant', content: botReply }]);
       setIsAiTyping(false);
 
-      // Speak reply — when done, refocus input so user is ready for next message
-      playSpeech(botReply, language, () => {
+      // Speak reply in active language — when done, refocus input
+      playSpeech(botReply, activeLang, () => {
         setTimeout(() => inputRef.current?.focus(), 200);
       });
     } catch (err) {

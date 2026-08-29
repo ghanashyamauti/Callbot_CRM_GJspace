@@ -25,6 +25,10 @@ const EDGE_FALLBACK_VOICES = {
   marathi: 'mr-IN-AarohiNeural',
 };
 
+// In-memory LRU Audio Cache for instant playback (<1ms)
+const audioCache = new Map();
+const MAX_CACHE_ITEMS = 150;
+
 function cleanTextForSpeech(text) {
   return text
     .replace(/\*\*/g, '')
@@ -38,7 +42,7 @@ function cleanTextForSpeech(text) {
 }
 
 /**
- * Generate speech using Sarvam AI Bulbul v3
+ * Generate speech using Sarvam AI Bulbul v3 (Studio Voice)
  */
 async function generateSarvamSpeech(text, language = 'english') {
   const apiKey = process.env.SARVAM_API_KEY;
@@ -47,7 +51,7 @@ async function generateSarvamSpeech(text, language = 'english') {
   const langCode = SARVAM_LANG_MAP[language] || 'en-IN';
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 6000); // 6s max
+  const timeout = setTimeout(() => controller.abort(), 5000); // 5s max
 
   try {
     const response = await fetch('https://api.sarvam.ai/text-to-speech', {
@@ -61,6 +65,7 @@ async function generateSarvamSpeech(text, language = 'english') {
         target_language_code: langCode,
         speaker: 'shreya', // High-fidelity Indian female voice
         model: 'bulbul:v3',
+        pace: 1.05, // Snappy, natural Indian phone conversational pace
       }),
       signal: controller.signal,
     });
@@ -97,8 +102,8 @@ async function generateEdgeSpeech(text, language = 'english') {
       await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
 
       const { audioStream } = tts.toStream(text, {
-        rate: '-5%',
-        pitch: '+5Hz',
+        rate: '+5%',
+        pitch: '+3Hz',
         volume: '+10%',
       });
 
@@ -118,22 +123,38 @@ async function generateEdgeSpeech(text, language = 'english') {
 }
 
 /**
- * Main audio generation dispatcher: Sarvam AI -> Edge TTS fallback
+ * Main audio generation dispatcher with In-Memory Caching
  */
 async function generateSpeechAudio(rawText, language = 'english') {
   const text = cleanTextForSpeech(rawText) || 'Hello from GJ SpaCes!';
+  const cacheKey = `${language}:${text}`;
 
+  // Check cache first for 0ms return
+  if (audioCache.has(cacheKey)) {
+    return audioCache.get(cacheKey);
+  }
+
+  let result;
   // 1. Try Sarvam AI Bulbul v3 (Primary Indian Female Voice)
   if (process.env.SARVAM_API_KEY) {
     try {
-      return await generateSarvamSpeech(text, language);
+      result = await generateSarvamSpeech(text, language);
     } catch (sarvamErr) {
-      console.warn('[api/tts] Sarvam TTS limit reached or error, falling back to Microsoft Neural TTS:', sarvamErr.message);
+      console.warn('[api/tts] Sarvam TTS limit reached or error, falling back to Edge TTS:', sarvamErr.message);
     }
   }
 
-  // 2. Fallback to Microsoft Neural Edge TTS
-  return await generateEdgeSpeech(text, language);
+  // 2. Fallback to Microsoft Neural Edge TTS if Sarvam failed
+  if (!result) {
+    result = await generateEdgeSpeech(text, language);
+  }
+
+  // Save in cache
+  if (result && audioCache.size < MAX_CACHE_ITEMS) {
+    audioCache.set(cacheKey, result);
+  }
+
+  return result;
 }
 
 export async function POST(request) {

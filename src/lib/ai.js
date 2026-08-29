@@ -2,47 +2,93 @@
 // Priority: Groq (llama-3.3-70b, ultra-fast + free) → OpenRouter (gemini-flash, fallback)
 // Switches silently — user never knows which provider is active.
 
-import { SAKSHI_SYSTEM_PROMPT } from './sakshi-persona';
+import { SAKSHI_SYSTEM_PROMPT } from './sakshi-persona.js';
 
-const GROQ_API_KEY = process.env.GROQ_API_KEY;
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+function getGroqKey() {
+  return process.env.GROQ_API_KEY;
+}
+
+function getOpenRouterKey() {
+  return process.env.OPENROUTER_API_KEY;
+}
 
 // ── Groq Config (Primary — FREE, ~200ms response) ────────────────────────────
 const GROQ_BASE_URL = 'https://api.groq.com/openai/v1';
-const GROQ_PRIMARY_MODEL = 'llama-3.1-8b-instant';       // Ultra-fast (~200ms) for phone calls
-const GROQ_FALLBACK_MODEL = 'llama-3.3-70b-versatile';   // Better reasoning, used if 8b fails
+const GROQ_PRIMARY_MODEL = 'groq/compound-mini';       // Ultra-fast (~200ms) for phone calls
+const GROQ_FALLBACK_MODEL = 'openai/gpt-oss-20b';       // Clean direct response fallback
 
 // ── OpenRouter Config (Silent Fallback — backup when Groq limit hit) ──────────
 const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
 const OPENROUTER_PRIMARY_MODEL = 'google/gemini-2.0-flash-001';
-const OPENROUTER_FALLBACK_MODEL = 'openai/gpt-4o-mini';
+const OPENROUTER_FALLBACK_MODEL = 'meta-llama/llama-3.3-70b-instruct';
 
 // Track which provider is active (in-memory, resets on restart)
 let activeProvider = 'groq'; // starts with groq
 
+/**
+ * Detect if user requested a mid-conversation language switch
+ */
+export function detectLanguageSwitch(text = '') {
+  if (!text) return null;
+  const lower = text.toLowerCase().trim();
+
+  // Check Hindi switch intent
+  const hindiTriggers = [
+    'hindi', 'हिंदी', 'हिन्दी', 'hindi please', 'talk in hindi', 'speak in hindi',
+    'talk to me in hindi', 'speak hindi', 'can you speak hindi', 'can we talk in hindi',
+    'hindi mein', 'hindi me', 'hindi bolo', 'hindi mai', 'hindi me baat', 'hindi madhe'
+  ];
+  if (hindiTriggers.some(t => lower.includes(t))) {
+    return { language: 'hindi', speechLang: 'hi-IN' };
+  }
+
+  // Check Marathi switch intent
+  const marathiTriggers = [
+    'marathi', 'मराठी', 'marathi please', 'talk in marathi', 'speak in marathi',
+    'talk to me in marathi', 'speak marathi', 'can you speak marathi', 'can we talk in marathi',
+    'marathi madhe', 'marathit', 'marathit bola', 'marathi bola', 'marathi sanga'
+  ];
+  if (marathiTriggers.some(t => lower.includes(t))) {
+    return { language: 'marathi', speechLang: 'mr-IN' };
+  }
+
+  // Check English switch intent
+  const englishTriggers = [
+    'english', 'अंग्रेजी', 'इंग्रजी', 'english please', 'talk in english', 'speak in english',
+    'talk to me in english', 'speak english', 'can you speak english', 'can we talk in english',
+    'angrezi', 'ingreji', 'in english'
+  ];
+  if (englishTriggers.some(t => lower.includes(t))) {
+    return { language: 'english', speechLang: 'en-IN' };
+  }
+
+  return null;
+}
+
 function buildLangInstruction(language) {
   if (language === 'hindi') {
-    return '\n\n## LANGUAGE RULE — CRITICAL, DO NOT VIOLATE\nYou MUST respond ONLY in Hindi using Devanagari script (हिंदी).\nEven if the user speaks in English or sends unclear/garbled text, you MUST still reply in Hindi.\nNEVER switch to English. NEVER mix languages. ALWAYS Hindi.\nKeep your reply to 1-2 short sentences. This is a phone call.';
+    return '\n\n## LANGUAGE INSTRUCTION\nRespond in fluent, conversational Hindi using Devanagari script (हिंदी).\nIf the customer asks to speak in English or Marathi, gladly acknowledge and immediately switch.\nKeep replies to 1-2 short, snappy sentences. This is a voice call.';
   }
   if (language === 'marathi') {
-    return '\n\n## LANGUAGE RULE — CRITICAL, DO NOT VIOLATE\nYou MUST respond ONLY in Marathi using Devanagari script (मराठी).\nEven if the user speaks in English or sends unclear/garbled text, you MUST still reply in Marathi.\nNEVER switch to English or Hindi. NEVER mix languages. ALWAYS Marathi.\nKeep your reply to 1-2 short sentences. This is a phone call.';
+    return '\n\n## LANGUAGE INSTRUCTION\nRespond in fluent, conversational Marathi using Devanagari script (मराठी).\nIf the customer asks to speak in English or Hindi, gladly acknowledge and immediately switch.\nKeep replies to 1-2 short, snappy sentences. This is a voice call.';
   }
-  return '\n\nRespond in clear, natural Indian English. Keep your reply to 1-2 short sentences. This is a phone call.';
+  return '\n\n## LANGUAGE INSTRUCTION\nRespond in clear, natural Indian English.\nIf the customer asks to speak in Hindi or Marathi, gladly acknowledge and immediately switch.\nKeep replies to 1-2 short, snappy sentences. This is a voice call.';
 }
 
 async function callGroq(messages, language, model = GROQ_PRIMARY_MODEL) {
-  if (!GROQ_API_KEY) throw new Error('GROQ_API_KEY not configured');
+  const apiKey = getGroqKey();
+  if (!apiKey) throw new Error('GROQ_API_KEY not configured');
 
   const systemPrompt = SAKSHI_SYSTEM_PROMPT + buildLangInstruction(language);
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 5000); // 5s max
+  const timeout = setTimeout(() => controller.abort(), 4000); // 4s max
 
   try {
     const response = await fetch(`${GROQ_BASE_URL}/chat/completions`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${GROQ_API_KEY}`,
+        'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -51,33 +97,31 @@ async function callGroq(messages, language, model = GROQ_PRIMARY_MODEL) {
           { role: 'system', content: systemPrompt },
           ...messages,
         ],
-        max_tokens: 80,
-        temperature: 0.5,
+        max_tokens: 60,
+        temperature: 0.3,
       }),
       signal: controller.signal,
     });
     clearTimeout(timeout);
 
-  if (!response.ok) {
-    const errText = await response.text();
-    const errData = JSON.parse(errText).catch?.(() => ({})) || {};
+    if (!response.ok) {
+      const errText = await response.text();
 
-    // Rate limit (429) or token limit exceeded → switch to fallback model, then OpenRouter
-    if (response.status === 429 || response.status === 413) {
+      // Rate limit or model error -> try fallback model or switch to OpenRouter
       if (model !== GROQ_FALLBACK_MODEL) {
-        console.warn('[AI] Groq primary rate-limited, trying Groq fallback model...');
+        console.warn(`[AI] Groq ${model} failed (${response.status}), trying Groq fallback...`);
         return callGroq(messages, language, GROQ_FALLBACK_MODEL);
       }
-      // Both Groq models exhausted — throw to trigger OpenRouter switch
-      throw new Error(`GROQ_RATE_LIMIT:${response.status}`);
+      throw new Error(`GROQ_ERROR:${response.status}:${errText}`);
     }
-    throw new Error(`Groq error ${response.status}: ${errText}`);
-  }
 
-  const data = await response.json();
-  const content = data.choices?.[0]?.message?.content;
-  if (!content) throw new Error('Empty response from Groq');
-  return content.trim();
+    const data = await response.json();
+    let content = data.choices?.[0]?.message?.content;
+    if (!content) throw new Error('Empty response from Groq');
+    
+    // Clean any thinking tags if present
+    content = content.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+    return content;
   } catch (err) {
     clearTimeout(timeout);
     throw err;
@@ -85,18 +129,19 @@ async function callGroq(messages, language, model = GROQ_PRIMARY_MODEL) {
 }
 
 async function callOpenRouter(messages, language, model = OPENROUTER_PRIMARY_MODEL) {
-  if (!OPENROUTER_API_KEY) throw new Error('OPENROUTER_API_KEY not configured');
+  const apiKey = getOpenRouterKey();
+  if (!apiKey) throw new Error('OPENROUTER_API_KEY not configured');
 
   const systemPrompt = SAKSHI_SYSTEM_PROMPT + buildLangInstruction(language);
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000); // 8s max
+  const timeout = setTimeout(() => controller.abort(), 6000); // 6s max
 
   try {
     const response = await fetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+        'Authorization': `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
         'HTTP-Referer': process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
         'X-Title': 'GJ SpaCes CallBot CRM',
@@ -107,26 +152,76 @@ async function callOpenRouter(messages, language, model = OPENROUTER_PRIMARY_MOD
           { role: 'system', content: systemPrompt },
           ...messages,
         ],
-        max_tokens: 80,
-        temperature: 0.5,
+        max_tokens: 60,
+        temperature: 0.3,
       }),
       signal: controller.signal,
     });
     clearTimeout(timeout);
 
-  if (!response.ok) {
-    const errText = await response.text();
-    if (model !== OPENROUTER_FALLBACK_MODEL) {
-      console.warn('[AI] OpenRouter primary failed, trying fallback...');
-      return callOpenRouter(messages, language, OPENROUTER_FALLBACK_MODEL);
+    if (!response.ok) {
+      const errText = await response.text();
+      if (model !== OPENROUTER_FALLBACK_MODEL) {
+        console.warn('[AI] OpenRouter primary failed, trying fallback...');
+        return callOpenRouter(messages, language, OPENROUTER_FALLBACK_MODEL);
+      }
+      throw new Error(`OpenRouter error ${response.status}: ${errText}`);
     }
-    throw new Error(`OpenRouter error ${response.status}: ${errText}`);
-  }
 
-  const data = await response.json();
-  const content = data.choices?.[0]?.message?.content;
-  if (!content) throw new Error('Empty response from OpenRouter');
-  return content.trim();
+    const data = await response.json();
+    let content = data.choices?.[0]?.message?.content;
+    if (!content) throw new Error('Empty response from OpenRouter');
+    content = content.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+    return content;
+  } catch (err) {
+    clearTimeout(timeout);
+    throw err;
+  }
+}
+
+function getSarvamKey() {
+  return process.env.SARVAM_API_KEY;
+}
+
+async function callSarvamChat(messages, language) {
+  const apiKey = getSarvamKey();
+  if (!apiKey) throw new Error('SARVAM_API_KEY not configured');
+
+  const systemPrompt = SAKSHI_SYSTEM_PROMPT + buildLangInstruction(language);
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 4000); // 4s max
+
+  try {
+    const response = await fetch('https://api.sarvam.ai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'api-subscription-key': apiKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'sarvam-105b-conversations',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          ...messages,
+        ],
+        max_tokens: 60,
+        temperature: 0.3,
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Sarvam Chat error ${response.status}: ${errText}`);
+    }
+
+    const data = await response.json();
+    let content = data.choices?.[0]?.message?.content;
+    if (!content) throw new Error('Empty response from Sarvam Chat');
+    content = content.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+    return content;
   } catch (err) {
     clearTimeout(timeout);
     throw err;
@@ -134,32 +229,35 @@ async function callOpenRouter(messages, language, model = OPENROUTER_PRIMARY_MOD
 }
 
 /**
- * Ask Sakshi AI — automatically uses Groq first, silently falls back to OpenRouter.
+ * Ask Sakshi AI — executes the fastest provider first (Groq <200ms -> Sarvam Chat -> OpenRouter).
  * @param {Array} messages - [{role: 'user'|'assistant', content: string}]
  * @param {string} language - 'english' | 'hindi' | 'marathi'
  * @param {string} [model] - optional model override
  */
 export async function askSakshi(messages, language = 'english', model = null) {
-  // Try Groq first if it's the active provider and API key exists
-  if (activeProvider === 'groq' && GROQ_API_KEY) {
+  const groqKey = getGroqKey();
+  // 1. Try Groq (Primary Ultra-fast, ~160ms)
+  if (groqKey) {
     try {
       const result = await callGroq(messages, language, model || GROQ_PRIMARY_MODEL);
       return result;
     } catch (err) {
-      const msg = err.message || '';
-      if (msg.startsWith('GROQ_RATE_LIMIT') || msg.includes('rate') || msg.includes('429')) {
-        // Groq quota exhausted — silently switch to OpenRouter for this session
-        console.warn('[AI] Groq rate limit reached — switching to OpenRouter silently.');
-        activeProvider = 'openrouter';
-      } else {
-        // Non-rate-limit error — still try OpenRouter as emergency fallback
-        console.warn('[AI] Groq error, falling back to OpenRouter:', msg);
-      }
-      // Fall through to OpenRouter
+      console.warn('[AI] Groq failed, trying Sarvam Chat fallback:', err.message);
     }
   }
 
-  // Use OpenRouter (either as default or after Groq failure/rate-limit)
+  // 2. Try Sarvam AI 105B Chat (Fast Indian Multilingual Brain)
+  const sarvamKey = getSarvamKey();
+  if (sarvamKey) {
+    try {
+      const result = await callSarvamChat(messages, language);
+      return result;
+    } catch (sarvamErr) {
+      console.warn('[AI] Sarvam Chat failed, trying OpenRouter fallback:', sarvamErr.message);
+    }
+  }
+
+  // 3. Fallback to OpenRouter (Gemini Flash)
   try {
     const result = await callOpenRouter(messages, language, model || OPENROUTER_PRIMARY_MODEL);
     return result;
