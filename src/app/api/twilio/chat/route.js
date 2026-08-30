@@ -137,10 +137,10 @@ async function handleChat(request) {
     } catch (aiError) {
       console.error('[twilio/chat] AI error:', aiError);
       aiReply = language === 'hindi'
-        ? 'GJ SpaCes में प्लॉट, फ्लैट और प्रॉपर्टी उपलब्ध हैं। हमारी टीम जल्द ही आपसे संपर्क करेगी।'
+        ? 'GJ Spaces में प्लॉट, फ्लैट और प्रॉपर्टी उपलब्ध हैं। हमारी टीम जल्द ही आपसे संपर्क करेगी।'
         : language === 'marathi'
-        ? 'GJ SpaCes मध्ये प्लॉट, फ्लॅट आणि प्रॉपर्टी उपलब्ध आहेत. आमची टीम लवकरच आपल्याशी संपर्क करेल.'
-        : 'GJ SpaCes offers residential plots, flats, and property solutions in Pune. Our team will contact you shortly with details.';
+        ? 'GJ Spaces मध्ये प्लॉट, फ्लॅट आणि प्रॉपर्टी उपलब्ध आहेत. आमची टीम लवकरच आपल्याशी संपर्क करेल.'
+        : 'GJ Spaces offers residential plots, flats, and property solutions in Pune. Our team will contact you shortly with details.';
     }
 
     const cleanReply = sanitizeForPhone(aiReply);
@@ -165,7 +165,7 @@ async function handleChat(request) {
         language,
         hints: continuationHints,
         prompt: cleanReply,
-        speechTimeout: 'auto',
+        speechTimeout: '1',
         maxSpeechTime: 30,
       }) +
       say(getGreeting('farewell', language), language) +
@@ -174,7 +174,7 @@ async function handleChat(request) {
 
   } catch (error) {
     console.error('[twilio/chat] Error:', error);
-    xml = twiml(say('Thank you for calling GJ SpaCes! Have a wonderful day.', 'english') + hangup());
+    xml = twiml(say('Thank you for calling GJ Spaces! Have a wonderful day.', 'english') + hangup());
   }
 
   return new NextResponse(xml, {

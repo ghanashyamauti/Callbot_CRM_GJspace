@@ -51,7 +51,7 @@ function formatDuration(seconds) {
 export default function SimulatePage() {
   const router = useRouter();
   const { addNotification } = useNotifications();
-  const brandName = process.env.NEXT_PUBLIC_BRAND_NAME || 'GJ SpaCes';
+  const brandName = process.env.NEXT_PUBLIC_BRAND_NAME || 'GJ Spaces';
 
   const [customer, setCustomer] = useState({
     name: 'Ghanashyam Auti',
@@ -388,10 +388,10 @@ export default function SimulatePage() {
     if (mode === 'talk') {
       setPhase('talking');
       const greeting = language === 'hindi'
-        ? `जी, मैं सुन रही हूं। आप GJ SpaCes के बारे में क्या जानना चाहते हैं?`
+        ? `जी, मैं सुन रही हूं। आप GJ Spaces के बारे में क्या जानना चाहते हैं?`
         : language === 'marathi'
-        ? `हो, मी ऐकत आहे. आपण GJ SpaCes बद्दल काय माहिती जाणून घेऊ इच्छिता?`
-        : `Yes, I'm listening! How can I help you with GJ SpaCes today?`;
+        ? `हो, मी ऐकत आहे. आपण GJ Spaces बद्दल काय माहिती जाणून घेऊ इच्छिता?`
+        : `Yes, I'm listening! How can I help you with GJ Spaces today?`;
 
       setTranscript(prev => [...prev, { role: 'bot', text: greeting }]);
       setAiMessages([{ role: 'assistant', content: greeting }]);

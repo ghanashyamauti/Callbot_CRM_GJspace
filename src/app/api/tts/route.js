@@ -31,6 +31,9 @@ const MAX_CACHE_ITEMS = 150;
 
 function cleanTextForSpeech(text) {
   return text
+    .replace(/GJ\s*SpaCes/gi, 'GJ Spaces')
+    .replace(/GJspaCes/gi, 'GJ Spaces')
+    .replace(/सक्षी/g, 'साक्षी')
     .replace(/\*\*/g, '')
     .replace(/\*/g, '')
     .replace(/#{1,6}\s/g, '')
